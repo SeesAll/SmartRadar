@@ -19,7 +19,7 @@ using UnityEngine;
 
 namespace Oxide.Plugins
 {
-    [Info("SmartRecon", "SeesAll", "2.3.2")]
+    [Info("SmartRecon", "SeesAll", "2.4.0")]
     [Description("Unified administrative reconnaissance, vanish, radar, inspection, and rapid movement for Rust")]
     public class SmartRecon : RustPlugin
     {
@@ -47,6 +47,7 @@ namespace Oxide.Plugins
         private const string PermTcInfo = "smartrecon.tcinfo";
         private const string PermUi = "smartrecon.ui";
         private const string PermForensics = "smartrecon.forensics";
+        private const string PermInspect = "smartrecon.inspect";
         private const string ModePlayers = "players";
         private const string ModeStashes = "stashes";
         private const string ModeCupboards = "tcs";
@@ -109,6 +110,7 @@ namespace Oxide.Plugins
         private readonly Dictionary<ulong, VanishRuntimeState> _vanishRuntime = new Dictionary<ulong, VanishRuntimeState>();
         private readonly Dictionary<ulong, float> _forensicCooldowns = new Dictionary<ulong, float>();
         private readonly Dictionary<ulong, float> _mapTeleportCooldowns = new Dictionary<ulong, float>();
+        private readonly Dictionary<ulong, float> _hammerInspectionCooldowns = new Dictionary<ulong, float>();
         private readonly Dictionary<ulong, UserInterfaceMoveSession> _uiMoveSessions = new Dictionary<ulong, UserInterfaceMoveSession>();
 
         private float _nextPlayerIndexRebuild;
@@ -164,6 +166,9 @@ namespace Oxide.Plugins
 
             [JsonProperty("Investigation user interface")]
             public UserInterfaceSettings UserInterface = new UserInterfaceSettings();
+
+            [JsonProperty("Vanish hammer inspection")]
+            public HammerInspectionSettings HammerInspection = new HammerInspectionSettings();
         }
 
         private sealed class GeneralSettings
@@ -442,6 +447,24 @@ namespace Oxide.Plugins
             public bool ForceVisionArrowsOnSpectate = true;
         }
 
+        private sealed class HammerInspectionSettings
+        {
+            [JsonProperty("Enabled")]
+            public bool Enabled = true;
+
+            [JsonProperty("Minimum seconds between inspection reports")]
+            public float Cooldown = 0.25f;
+
+            [JsonProperty("Include tool cupboard upkeep time")]
+            public bool IncludeCupboardUpkeep = true;
+
+            [JsonProperty("Include code lock authorization lists")]
+            public bool IncludeLockAuthorization = true;
+
+            [JsonProperty("Log hammer inspections to the server console")]
+            public bool LogUsage = false;
+        }
+
         private sealed class UserInterfaceSettings
         {
             [JsonProperty("Enabled")]
@@ -521,6 +544,7 @@ namespace Oxide.Plugins
             if (_config.Vanish == null) _config.Vanish = new VanishSettings();
             if (_config.Investigation == null) _config.Investigation = new InvestigationSettings();
             if (_config.UserInterface == null) _config.UserInterface = new UserInterfaceSettings();
+            if (_config.HammerInspection == null) _config.HammerInspection = new HammerInspectionSettings();
 
             bool usesPreviousDefaultAnchors =
                 string.Equals(_config.UserInterface.AnchorMin, PreviousDefaultUiAnchorMin, StringComparison.Ordinal) &&
@@ -594,6 +618,9 @@ namespace Oxide.Plugins
             _config.Display.PlayerLabelScale = Mathf.Clamp(_config.Display.PlayerLabelScale, 0.25f, 3f);
             _config.Vanish.MapTeleportHeightOffset = Mathf.Clamp(_config.Vanish.MapTeleportHeightOffset, 0f, 20f);
             _config.Vanish.MapTeleportCooldown = Mathf.Clamp(_config.Vanish.MapTeleportCooldown, 0.1f, 10f);
+            if (!IsFinitePositive(_config.HammerInspection.Cooldown))
+                _config.HammerInspection.Cooldown = 0.25f;
+            _config.HammerInspection.Cooldown = Mathf.Clamp(_config.HammerInspection.Cooldown, 0.1f, 5f);
 
             _playerDrawColor = ParseColor(_config.Display.PlayerDrawingColor, Color.white);
             _stashDrawColor = ParseColor(_config.Display.StashDrawingColor, new Color(0.9f, 0.26f, 0.96f));
@@ -843,7 +870,19 @@ namespace Oxide.Plugins
                 ["ForensicCooldown"] = "Please wait {0:0.#} seconds before starting another forensic search.",
                 ["ForensicFindUsage"] = "Usage: /radar findid <Steam ID>",
                 ["ForensicBuildingUsage"] = "Usage: /radar buildings <twig|unprivileged>",
-                ["ForensicComplete"] = "Forensic drawing complete: {0} results (maximum 250, visible for 30 seconds)."
+                ["ForensicComplete"] = "Forensic drawing complete: {0} results (maximum 250, visible for 30 seconds).",
+                ["InspectionHeader"] = "<color=#19C7B6><b>{0}</b></color>",
+                ["InspectionOwner"] = "Owner: {0}",
+                ["InspectionPlacedBy"] = "Placed by: {0}",
+                ["InspectionAssignedTo"] = "Assigned to: {0}",
+                ["InspectionAuthorized"] = "Authorized: {0}",
+                ["InspectionLockAuthorized"] = "Lock authorized: {0}",
+                ["InspectionGuestAuthorized"] = "Guest authorized: {0}",
+                ["InspectionAuthorizationEntry"] = "{0}. {1}",
+                ["InspectionUpkeep"] = "Protected for: {0}",
+                ["InspectionServerOwned"] = "Server or unknown",
+                ["InspectionUnknownPlayer"] = "Unknown player",
+                ["InspectionAudit"] = "{0} ({1}) inspected {2} owned by {3} at {4}."
             }, this);
         }
 
@@ -922,6 +961,7 @@ namespace Oxide.Plugins
             _vanishedPlayers.Clear();
             _vanishRuntime.Clear();
             _mapTeleportCooldowns.Clear();
+            _hammerInspectionCooldowns.Clear();
             _uiMoveSessions.Clear();
             ClearIndexes();
             UnsubscribeVanishHooks();
@@ -966,6 +1006,7 @@ namespace Oxide.Plugins
             _voiceActivity.Remove(player.userID);
             _vanishStateCache.Remove(player.userID);
             _mapTeleportCooldowns.Remove(player.userID);
+            _hammerInspectionCooldowns.Remove(player.userID);
             _forensicCooldowns.Remove(player.userID);
             _uiMoveSessions.Remove(player.userID);
             if (_dataDirty) SaveData();
@@ -3743,6 +3784,7 @@ namespace Oxide.Plugins
             if (_config.Vanish.EnableLockBypass) Subscribe(nameof(CanUseLockedEntity));
             if (_config.Vanish.BypassAntiHack) Subscribe(nameof(OnPlayerViolation));
             if (_config.Vanish.EnableMapMarkerTeleport) Subscribe(nameof(OnMapMarkerAdd));
+            if (_config.HammerInspection.Enabled) Subscribe(nameof(OnHammerHit));
             _vanishHooksSubscribed = true;
         }
 
@@ -3753,6 +3795,7 @@ namespace Oxide.Plugins
             Unsubscribe(nameof(CanUseLockedEntity));
             Unsubscribe(nameof(OnPlayerViolation));
             Unsubscribe(nameof(OnMapMarkerAdd));
+            Unsubscribe(nameof(OnHammerHit));
             _vanishHooksSubscribed = false;
         }
 
@@ -3818,6 +3861,199 @@ namespace Oxide.Plugins
             if (attackerVanished && _config.Vanish.PreventOutgoingDamage && !HasPermission(attacker, PermVanishDamage))
                 return true;
             return null;
+        }
+
+        private object OnHammerHit(BasePlayer player, HitInfo info)
+        {
+            if (!_config.HammerInspection.Enabled || player == null || !player.IsConnected ||
+                !IsBuiltInVanished(player) || !HasPermission(player, PermInspect)) return null;
+
+            Item activeItem = player.GetActiveItem();
+            if (activeItem == null || activeItem.info == null || activeItem.info.shortname != "hammer") return null;
+
+            float now = Time.realtimeSinceStartup;
+            float availableAt;
+            if (_hammerInspectionCooldowns.TryGetValue(player.userID, out availableAt) && now < availableAt)
+                return true;
+            _hammerInspectionCooldowns[player.userID] = now + _config.HammerInspection.Cooldown;
+
+            BaseEntity entity = info == null ? null : info.HitEntity;
+            BaseLock struckLock = entity as BaseLock;
+            if (struckLock != null)
+            {
+                BaseEntity parent = struckLock.GetParentEntity();
+                if (parent != null) entity = parent;
+            }
+
+            if (entity != null && !entity.IsDestroyed)
+                SendHammerInspection(player, entity);
+
+            // A qualifying vanished hammer strike is an inspection gesture, never a repair or upgrade action.
+            return true;
+        }
+
+        private void SendHammerInspection(BasePlayer player, BaseEntity entity)
+        {
+            List<string> lines = new List<string>();
+            lines.Add(MessageText("InspectionHeader", player.UserIDString, GetInspectionEntityTitle(entity)));
+
+            BuildingPrivlidge cupboard = entity as BuildingPrivlidge;
+            AutoTurret turret = entity as AutoTurret;
+            SleepingBag sleepingBag = entity as SleepingBag;
+
+            if (cupboard != null)
+            {
+                AddInspectionOwner(lines, player, cupboard.OwnerID);
+                AddInspectionAuthorization(lines, player, "InspectionAuthorized", cupboard.authorizedPlayers, null);
+                if (_config.HammerInspection.IncludeCupboardUpkeep)
+                    lines.Add(MessageText("InspectionUpkeep", player.UserIDString,
+                        FormatInspectionDuration(cupboard.GetProtectedMinutes())));
+            }
+            else if (turret != null)
+            {
+                AddInspectionOwner(lines, player, turret.OwnerID);
+                AddInspectionAuthorization(lines, player, "InspectionAuthorized", turret.authorizedPlayers, null);
+            }
+            else if (sleepingBag != null)
+            {
+                lines.Add(MessageText("InspectionPlacedBy", player.UserIDString,
+                    GetInspectionPlayerIdentity(player, sleepingBag.OwnerID)));
+                lines.Add(MessageText("InspectionAssignedTo", player.UserIDString,
+                    GetInspectionPlayerIdentity(player, sleepingBag.deployerUserID)));
+            }
+            else
+            {
+                AddInspectionOwner(lines, player, entity.OwnerID);
+            }
+
+            if (_config.HammerInspection.IncludeLockAuthorization)
+            {
+                CodeLock codeLock = entity.GetSlot(BaseEntity.Slot.Lock) as CodeLock;
+                if (codeLock != null)
+                {
+                    AddInspectionAuthorization(lines, player, "InspectionLockAuthorized",
+                        codeLock.whitelistPlayers, null);
+                    AddInspectionAuthorization(lines, player, "InspectionGuestAuthorized",
+                        codeLock.guestPlayers, codeLock.whitelistPlayers);
+                }
+            }
+
+            SendPrivateInspection(player, lines);
+
+            if (_config.HammerInspection.LogUsage)
+            {
+                Puts(MessageText("InspectionAudit", null, player.displayName, player.UserIDString,
+                    entity.ShortPrefabName, entity.OwnerID, entity.transform.position));
+            }
+        }
+
+        private void AddInspectionOwner(List<string> lines, BasePlayer viewer, ulong ownerId)
+        {
+            lines.Add(MessageText("InspectionOwner", viewer.UserIDString,
+                GetInspectionPlayerIdentity(viewer, ownerId)));
+        }
+
+        private void AddInspectionAuthorization(List<string> lines, BasePlayer viewer, string headerKey,
+            ICollection<ulong> authorizedPlayers, ICollection<ulong> excludedPlayers)
+        {
+            int count = 0;
+            if (authorizedPlayers != null)
+            {
+                foreach (ulong userId in authorizedPlayers)
+                {
+                    if (excludedPlayers != null && excludedPlayers.Contains(userId)) continue;
+                    count++;
+                }
+            }
+
+            lines.Add(MessageText(headerKey, viewer.UserIDString, count));
+            if (authorizedPlayers == null || count == 0) return;
+
+            int number = 0;
+            foreach (ulong userId in authorizedPlayers)
+            {
+                if (excludedPlayers != null && excludedPlayers.Contains(userId)) continue;
+                number++;
+                lines.Add(MessageText("InspectionAuthorizationEntry", viewer.UserIDString, number,
+                    GetInspectionPlayerIdentity(viewer, userId)));
+            }
+        }
+
+        private string GetInspectionPlayerIdentity(BasePlayer viewer, ulong userId)
+        {
+            if (userId == 0) return MessageText("InspectionServerOwned", viewer.UserIDString);
+
+            BasePlayer target = BasePlayer.FindByID(userId) ?? BasePlayer.FindSleeping(userId);
+            string playerName = target == null ? null : target.displayName;
+            if (string.IsNullOrWhiteSpace(playerName))
+            {
+                IPlayer covalencePlayer = covalence.Players.FindPlayerById(userId.ToString(CultureInfo.InvariantCulture));
+                if (covalencePlayer != null) playerName = covalencePlayer.Name;
+            }
+            if (string.IsNullOrWhiteSpace(playerName))
+                playerName = MessageText("InspectionUnknownPlayer", viewer.UserIDString);
+
+            return EscapeRichText(playerName) + " (" + userId.ToString(CultureInfo.InvariantCulture) + ")";
+        }
+
+        private static string GetInspectionEntityTitle(BaseEntity entity)
+        {
+            if (entity is BuildingPrivlidge) return "TOOL CUPBOARD";
+            if (entity is AutoTurret) return "AUTO TURRET";
+            SleepingBag sleepingBag = entity as SleepingBag;
+            if (sleepingBag != null)
+            {
+                string shortName = sleepingBag.ShortPrefabName ?? string.Empty;
+#pragma warning disable CA2249
+                return shortName.IndexOf("bed", StringComparison.OrdinalIgnoreCase) >= 0
+#pragma warning restore CA2249
+                    ? "BED"
+                    : "SLEEPING BAG";
+            }
+            if (entity is BuildingBlock) return "BUILDING BLOCK";
+
+            string name = entity == null ? "ENTITY" : entity.ShortPrefabName;
+            if (string.IsNullOrWhiteSpace(name)) return "ENTITY";
+            return EscapeRichText(name.Replace('_', ' ').Replace('.', ' ').Replace('-', ' ')).ToUpperInvariant();
+        }
+
+        private static string FormatInspectionDuration(float protectedMinutes)
+        {
+            if (float.IsNaN(protectedMinutes) || float.IsInfinity(protectedMinutes) || protectedMinutes <= 0f)
+                return "0m";
+            TimeSpan duration = TimeSpan.FromMinutes(Mathf.Max(0f, protectedMinutes));
+            StringBuilder value = new StringBuilder();
+            if (duration.Days > 0) value.Append(duration.Days).Append('d');
+            if (duration.Hours > 0)
+            {
+                if (value.Length > 0) value.Append(' ');
+                value.Append(duration.Hours).Append('h');
+            }
+            if (duration.Minutes > 0 || value.Length == 0)
+            {
+                if (value.Length > 0) value.Append(' ');
+                value.Append(duration.Minutes).Append('m');
+            }
+            return value.ToString();
+        }
+
+        private static void SendPrivateInspection(BasePlayer player, List<string> lines)
+        {
+            if (player == null || lines == null || lines.Count == 0) return;
+            const int maximumChunkLength = 900;
+            StringBuilder chunk = new StringBuilder(maximumChunkLength);
+            for (int i = 0; i < lines.Count; i++)
+            {
+                string line = lines[i] ?? string.Empty;
+                if (chunk.Length > 0 && chunk.Length + line.Length + 1 > maximumChunkLength)
+                {
+                    player.ChatMessage(chunk.ToString());
+                    chunk.Length = 0;
+                }
+                if (chunk.Length > 0) chunk.Append('\n');
+                chunk.Append(line);
+            }
+            if (chunk.Length > 0) player.ChatMessage(chunk.ToString());
         }
 
         private object OnMapMarkerAdd(BasePlayer player, ProtoBuf.MapNote note)
@@ -4087,6 +4323,7 @@ namespace Oxide.Plugins
             permission.RegisterPermission(PermTcInfo, this);
             permission.RegisterPermission(PermUi, this);
             permission.RegisterPermission(PermForensics, this);
+            permission.RegisterPermission(PermInspect, this);
         }
 
         private static bool PermissionMatches(string suppliedPermission, string currentPermission)

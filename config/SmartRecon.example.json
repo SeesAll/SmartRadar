@@ -120,5 +120,12 @@
     "Enabled button color": "0.08 0.62 0.56 0.95",
     "Disabled button color": "0.16 0.19 0.22 0.92",
     "Text color": "0.94 0.97 0.98 1.0"
+  },
+  "Vanish hammer inspection": {
+    "Enabled": true,
+    "Minimum seconds between inspection reports": 0.25,
+    "Include tool cupboard upkeep time": true,
+    "Include code lock authorization lists": true,
+    "Log hammer inspections to the server console": false
   }
 }

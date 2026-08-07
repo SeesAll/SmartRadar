@@ -6,6 +6,25 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [2.4.0] - 2026-08-07
+
+### Added
+
+- Added permission-gated, vanish-only hammer inspection through `smartrecon.inspect`.
+- Hammer strikes now provide private, type-specific reports for tool cupboards, auto turrets, sleeping bags, beds, locked doors and containers, building pieces, traps, and other player-owned entities.
+- Tool cupboard and turret reports include numbered full authorization lists with player names and Steam IDs. Sleeping bags and beds identify both placer and assigned player.
+- Optional TC upkeep, code-lock whitelist and guest authorization, report cooldown, and server-console audit logging settings.
+
+### Security
+
+- Qualifying inspection strikes override normal hammer behavior, so they cannot damage, repair, or upgrade the target even when the administrator also has vanished-damage permission.
+- Reports are sent only to the investigating administrator. Lock codes and container contents are never included.
+
+### Performance
+
+- Hammer inspection uses Rust's event-driven `OnHammerHit` hook with no polling or entity scanning.
+- The hook is dynamically subscribed only while at least one SmartRecon administrator is vanished and exits immediately for unpermitted users.
+
 ## [2.3.2] - 2026-08-07
 
 ### Fixed
@@ -348,7 +367,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Dynamic voice-hook subscription and idle player-index suspension.
 - Configuration validation, localization, safe lifecycle cleanup, and corrupt-data recovery.
 
-[Unreleased]: https://github.com/SeesAll/SmartRecon/compare/2.3.2...HEAD
+[Unreleased]: https://github.com/SeesAll/SmartRecon/compare/2.4.0...HEAD
+[2.4.0]: https://github.com/SeesAll/SmartRecon/compare/2.3.2...2.4.0
 [2.3.2]: https://github.com/SeesAll/SmartRecon/compare/2.3.1...2.3.2
 [2.3.1]: https://github.com/SeesAll/SmartRecon/compare/2.3.0...2.3.1
 [2.3.0]: https://github.com/SeesAll/SmartRecon/compare/2.2.0...2.3.0
