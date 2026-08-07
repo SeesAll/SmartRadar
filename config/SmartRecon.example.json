@@ -2,10 +2,12 @@
   "General settings": {
     "Command aliases": [
       "radar",
+      "recon",
+      "smartrecon",
       "sradar",
       "smartradar"
     ],
-    "Rust moderators and owners bypass SmartRadar permissions": true,
+    "Rust moderators and owners bypass SmartRecon permissions": true,
     "Persist each administrator's last settings": true,
     "Log radar start and stop events": false,
     "Default mode (players, stashes, tcs, all)": "players",
@@ -14,7 +16,7 @@
     "Minimum refresh rate in seconds": 0.5,
     "Maximum refresh rate in seconds": 30.0,
     "Maximum standard distance": 250.0,
-    "Maximum distance with smartradar.extendedrange": 1000.0,
+    "Maximum distance with smartrecon.extendedrange": 1000.0,
     "Maximum temporary radar duration in seconds": 86400.0
   },
   "Scheduler and spatial index": {
@@ -63,7 +65,7 @@
     "Hide vanished players unless explicitly enabled and permitted": true,
     "Treat any Rust limited-networking player as vanished": true,
     "Mark visible vanished players with [V]": true,
-    "Hide owners from moderators unless they have smartradar.seeowners": true
+    "Hide owners from moderators unless they have smartrecon.seeowners": true
   },
   "Built-in vanish": {
     "Command aliases": [
@@ -81,10 +83,10 @@
     "Pause anti-hack checks while vanished": true,
     "Prevent vanished administrators from receiving damage": true,
     "Prevent vanished administrators from dealing damage without permission": true,
-    "Allow lock bypass with smartradar.vanish.unlock": true,
+    "Allow lock bypass with smartrecon.vanish.unlock": true,
     "Enable inventory inspection commands": true,
     "Enable reload-key investigative interaction while vanished": true,
-    "Enable vanish-only map-marker teleport with smartradar.vanish.teleport": true,
+    "Enable vanish-only map-marker teleport with smartrecon.vanish.teleport": true,
     "Remove map marker after a successful vanish teleport": true,
     "Preserve current noclip altitude when above the destination": true,
     "Map-marker teleport height offset": 2.0,

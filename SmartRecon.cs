@@ -2,6 +2,7 @@ using Facepunch;
 using HarmonyLib;
 using Network;
 using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
 using Oxide.Core;
 using Oxide.Core.Configuration;
 using Oxide.Core.Libraries.Covalence;
@@ -13,47 +14,51 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Globalization;
+using System.IO;
 using System.Reflection;
 using System.Text;
 using UnityEngine;
 
 namespace Oxide.Plugins
 {
-    [Info("SmartRadar", "SeesAll", "1.3.1")]
-    [Description("Unified administrative vanish and high-performance radar for Rust")]
-    public class SmartRadar : RustPlugin
+    [Info("SmartRecon", "SeesAll", "2.0.0")]
+    [Description("Unified administrative reconnaissance, vanish, radar, inspection, and rapid movement for Rust")]
+    public class SmartRecon : RustPlugin
     {
         #region Constants and references
 
-        private const string PermUse = "smartradar.use";
-        private const string PermPlayers = "smartradar.players";
-        private const string PermStashes = "smartradar.stashes";
-        private const string PermCupboards = "smartradar.cupboards";
-        private const string PermArrows = "smartradar.arrows";
-        private const string PermVoice = "smartradar.voice";
-        private const string PermSleepers = "smartradar.sleepers";
-        private const string PermExtendedRange = "smartradar.extendedrange";
-        private const string PermSeeVanished = "smartradar.seevanished";
-        private const string PermSeeOwners = "smartradar.seeowners";
-        private const string PermVanish = "smartradar.vanish";
-        private const string PermVanishPermanent = "smartradar.vanish.permanent";
-        private const string PermVanishUnlock = "smartradar.vanish.unlock";
-        private const string PermVanishDamage = "smartradar.vanish.damage";
-        private const string PermVanishInventory = "smartradar.vanish.inventory";
-        private const string PermVanishTeleport = "smartradar.vanish.teleport";
-        private const string PermNpcs = "smartradar.npcs";
-        private const string PermLoot = "smartradar.loot";
-        private const string PermExtended = "smartradar.extended";
-        private const string PermTcInfo = "smartradar.tcinfo";
-        private const string PermUi = "smartradar.ui";
-        private const string PermForensics = "smartradar.forensics";
+        private const string PermUse = "smartrecon.use";
+        private const string PermPlayers = "smartrecon.players";
+        private const string PermStashes = "smartrecon.stashes";
+        private const string PermCupboards = "smartrecon.cupboards";
+        private const string PermArrows = "smartrecon.arrows";
+        private const string PermVoice = "smartrecon.voice";
+        private const string PermSleepers = "smartrecon.sleepers";
+        private const string PermExtendedRange = "smartrecon.extendedrange";
+        private const string PermSeeVanished = "smartrecon.seevanished";
+        private const string PermSeeOwners = "smartrecon.seeowners";
+        private const string PermVanish = "smartrecon.vanish";
+        private const string PermVanishPermanent = "smartrecon.vanish.permanent";
+        private const string PermVanishUnlock = "smartrecon.vanish.unlock";
+        private const string PermVanishDamage = "smartrecon.vanish.damage";
+        private const string PermVanishInventory = "smartrecon.vanish.inventory";
+        private const string PermVanishTeleport = "smartrecon.vanish.teleport";
+        private const string PermNpcs = "smartrecon.npcs";
+        private const string PermLoot = "smartrecon.loot";
+        private const string PermExtended = "smartrecon.extended";
+        private const string PermTcInfo = "smartrecon.tcinfo";
+        private const string PermUi = "smartrecon.ui";
+        private const string PermForensics = "smartrecon.forensics";
+        private const string LegacyPermissionPrefix = "smartradar.";
+        private const string CurrentPermissionPrefix = "smartrecon.";
+        private const string LegacyPluginName = "SmartRadar";
 
         private const string ModePlayers = "players";
         private const string ModeStashes = "stashes";
         private const string ModeCupboards = "tcs";
         private const string ModeAll = "all";
         private const string ModeCustom = "custom";
-        private const string RadarUiName = "SmartRadar.InvestigationUI";
+        private const string RadarUiName = "SmartRecon.InvestigationUI";
 
         #endregion
 
@@ -107,7 +112,7 @@ namespace Oxide.Plugins
         private MethodInfo _networkUpdateGroupsMethod;
         private MemberInfo _playerNetworkRangeMember;
 
-        private static SmartRadar Instance;
+        private static SmartRecon Instance;
 
         private Color _playerDrawColor;
         private Color _stashDrawColor;
@@ -150,9 +155,9 @@ namespace Oxide.Plugins
         private sealed class GeneralSettings
         {
             [JsonProperty("Command aliases", ObjectCreationHandling = ObjectCreationHandling.Replace)]
-            public string[] CommandAliases = { "radar", "sradar", "smartradar" };
+            public string[] CommandAliases = { "radar", "recon", "smartrecon", "sradar", "smartradar" };
 
-            [JsonProperty("Rust moderators and owners bypass SmartRadar permissions")]
+            [JsonProperty("Rust moderators and owners bypass SmartRecon permissions")]
             public bool AdminsBypassPermissions = true;
 
             [JsonProperty("Persist each administrator's last settings")]
@@ -179,7 +184,7 @@ namespace Oxide.Plugins
             [JsonProperty("Maximum standard distance")]
             public float MaximumStandardDistance = 250f;
 
-            [JsonProperty("Maximum distance with smartradar.extendedrange")]
+            [JsonProperty("Maximum distance with smartrecon.extendedrange")]
             public float MaximumExtendedDistance = 1000f;
 
             [JsonProperty("Maximum temporary radar duration in seconds")]
@@ -314,7 +319,7 @@ namespace Oxide.Plugins
             [JsonProperty("Mark visible vanished players with [V]")]
             public bool MarkVanishedPlayers = true;
 
-            [JsonProperty("Hide owners from moderators unless they have smartradar.seeowners")]
+            [JsonProperty("Hide owners from moderators unless they have smartrecon.seeowners")]
             public bool HideOwnersFromModerators = true;
         }
 
@@ -347,7 +352,7 @@ namespace Oxide.Plugins
             [JsonProperty("Prevent vanished administrators from dealing damage without permission")]
             public bool PreventOutgoingDamage = true;
 
-            [JsonProperty("Allow lock bypass with smartradar.vanish.unlock")]
+            [JsonProperty("Allow lock bypass with smartrecon.vanish.unlock")]
             public bool EnableLockBypass = true;
 
             [JsonProperty("Enable inventory inspection commands")]
@@ -356,7 +361,7 @@ namespace Oxide.Plugins
             [JsonProperty("Enable reload-key investigative interaction while vanished")]
             public bool EnableReloadInteraction = true;
 
-            [JsonProperty("Enable vanish-only map-marker teleport with smartradar.vanish.teleport")]
+            [JsonProperty("Enable vanish-only map-marker teleport with smartrecon.vanish.teleport")]
             public bool EnableMapMarkerTeleport = true;
 
             [JsonProperty("Remove map marker after a successful vanish teleport")]
@@ -451,6 +456,14 @@ namespace Oxide.Plugins
 
         protected override void LoadConfig()
         {
+            if (!File.Exists(Config.Filename) && TryLoadLegacyConfig())
+            {
+                ValidateConfig();
+                SaveConfig();
+                PrintWarning("Imported legacy SmartRadar configuration into SmartRecon. The original file was left untouched.");
+                return;
+            }
+
             base.LoadConfig();
             try
             {
@@ -471,6 +484,49 @@ namespace Oxide.Plugins
             SaveConfig();
         }
 
+        private bool TryLoadLegacyConfig()
+        {
+            string legacyPath = Path.Combine(Interface.Oxide.ConfigDirectory, LegacyPluginName + ".json");
+            if (!File.Exists(legacyPath)) return false;
+            try
+            {
+                DynamicConfigFile legacyFile = new DynamicConfigFile(legacyPath);
+                JObject raw = legacyFile.ReadObject<JObject>();
+                if (raw == null) return false;
+                _config = raw.ToObject<PluginConfig>();
+                if (_config == null) return false;
+
+                JObject general = raw["General settings"] as JObject;
+                JObject privacy = raw["Vanish and owner privacy"] as JObject;
+                JObject vanish = raw["Built-in vanish"] as JObject;
+                if (general != null)
+                {
+                    JToken token = general["Rust moderators and owners bypass SmartRadar permissions"];
+                    if (token != null) _config.General.AdminsBypassPermissions = token.Value<bool>();
+                    token = general["Maximum distance with smartradar.extendedrange"];
+                    if (token != null) _config.General.MaximumExtendedDistance = token.Value<float>();
+                }
+                if (privacy != null)
+                {
+                    JToken token = privacy["Hide owners from moderators unless they have smartradar.seeowners"];
+                    if (token != null) _config.Privacy.HideOwnersFromModerators = token.Value<bool>();
+                }
+                if (vanish != null)
+                {
+                    JToken token = vanish["Allow lock bypass with smartradar.vanish.unlock"];
+                    if (token != null) _config.Vanish.EnableLockBypass = token.Value<bool>();
+                    token = vanish["Enable vanish-only map-marker teleport with smartradar.vanish.teleport"];
+                    if (token != null) _config.Vanish.EnableMapMarkerTeleport = token.Value<bool>();
+                }
+                return true;
+            }
+            catch (Exception exception)
+            {
+                PrintWarning("Legacy SmartRadar configuration could not be imported: " + exception.Message);
+                return false;
+            }
+        }
+
         protected override void SaveConfig()
         {
             Config.WriteObject(_config, true);
@@ -488,7 +544,9 @@ namespace Oxide.Plugins
             if (_config.UserInterface == null) _config.UserInterface = new UserInterfaceSettings();
 
             if (_config.General.CommandAliases == null || _config.General.CommandAliases.Length == 0)
-                _config.General.CommandAliases = new[] { "radar", "sradar", "smartradar" };
+                _config.General.CommandAliases = new[] { "radar", "recon", "smartrecon", "sradar", "smartradar" };
+            else if (UsesLegacyDefaultRadarAliases(_config.General.CommandAliases))
+                _config.General.CommandAliases = new[] { "radar", "recon", "smartrecon", "sradar", "smartradar" };
             if (_config.Vanish.CommandAliases == null || _config.Vanish.CommandAliases.Length == 0)
                 _config.Vanish.CommandAliases = new[] { "vanish", "v" };
             if (_config.Vanish.InventoryCommandAliases == null || _config.Vanish.InventoryCommandAliases.Length == 0)
@@ -535,6 +593,14 @@ namespace Oxide.Plugins
             _arrowDrawColor = ParseColor(_config.Display.ArrowDrawingColor, Color.white);
             _lootDrawColor = ParseColor(_config.Display.LootDrawingColor, new Color(0.95f, 0.79f, 0.3f));
             _npcDrawColor = ParseColor(_config.Display.NpcDrawingColor, new Color(1f, 0.7f, 0.28f));
+        }
+
+        private static bool UsesLegacyDefaultRadarAliases(string[] aliases)
+        {
+            if (aliases == null || aliases.Length != 3) return false;
+            return string.Equals(aliases[0], "radar", StringComparison.OrdinalIgnoreCase) &&
+                string.Equals(aliases[1], "sradar", StringComparison.OrdinalIgnoreCase) &&
+                string.Equals(aliases[2], "smartradar", StringComparison.OrdinalIgnoreCase);
         }
 
         private static Color ParseColor(string value, Color fallback)
@@ -584,14 +650,31 @@ namespace Oxide.Plugins
         private void LoadData()
         {
             _dataFile = Interface.Oxide.DataFileSystem.GetFile(Name);
+            DynamicConfigFile sourceFile = _dataFile;
+            bool importedLegacyData = false;
+            if (!File.Exists(_dataFile.Filename))
+            {
+                DynamicConfigFile legacyDataFile = Interface.Oxide.DataFileSystem.GetFile(LegacyPluginName);
+                if (File.Exists(legacyDataFile.Filename))
+                {
+                    sourceFile = legacyDataFile;
+                    importedLegacyData = true;
+                }
+            }
             try
             {
-                _storedData = _dataFile.ReadObject<StoredData>();
+                _storedData = sourceFile.ReadObject<StoredData>();
                 if (_storedData == null) _storedData = new StoredData();
                 if (_storedData.Preferences == null)
                     _storedData.Preferences = new Dictionary<ulong, RadarPreferences>();
                 if (_storedData.VanishedUsers == null)
                     _storedData.VanishedUsers = new HashSet<ulong>();
+                if (importedLegacyData)
+                {
+                    _dataDirty = true;
+                    SaveData();
+                    PrintWarning("Imported legacy SmartRadar preferences and vanish state into SmartRecon. The original data file was left untouched.");
+                }
             }
             catch (Exception exception)
             {
@@ -697,33 +780,33 @@ namespace Oxide.Plugins
         {
             lang.RegisterMessages(new Dictionary<string, string>
             {
-                ["NoPermission"] = "You do not have permission to use SmartRadar.",
+                ["NoPermission"] = "You do not have permission to use SmartRecon.",
                 ["FeaturePermission"] = "You do not have permission to use the '{0}' radar feature.",
-                ["Enabled"] = "SmartRadar enabled: {0} mode, {1:0.#}m, {2:0.##}s player refresh.",
-                ["Disabled"] = "SmartRadar disabled.",
-                ["AlreadyDisabled"] = "SmartRadar is already disabled.",
-                ["StatusOn"] = "SmartRadar: ON | mode={0} | layers={12} | distance={1:0.#}m | rate={2:0.##}s | arrows={3} | voice={4} | sleepers={5} | vanished={6} | extended={13} | tc-links={14} | ui={15} | team={7} | auth={8} | safezone={9} | name={10} | expires={11}",
-                ["StatusOff"] = "SmartRadar: OFF | saved mode={0}, distance={1:0.#}m, rate={2:0.##}s.",
+                ["Enabled"] = "SmartRecon enabled: {0} mode, {1:0.#}m, {2:0.##}s player refresh.",
+                ["Disabled"] = "SmartRecon disabled.",
+                ["AlreadyDisabled"] = "SmartRecon is already disabled.",
+                ["StatusOn"] = "SmartRecon: ON | mode={0} | layers={12} | distance={1:0.#}m | rate={2:0.##}s | arrows={3} | voice={4} | sleepers={5} | vanished={6} | extended={13} | tc-links={14} | ui={15} | team={7} | auth={8} | safezone={9} | name={10} | expires={11}",
+                ["StatusOff"] = "SmartRecon: OFF | saved mode={0}, distance={1:0.#}m, rate={2:0.##}s.",
                 ["InvalidMode"] = "Invalid mode. Use players, stashes, tcs, all, or custom.",
                 ["InvalidNumber"] = "'{0}' must be a positive finite number.",
                 ["DistanceTooHigh"] = "Maximum permitted radar distance is {0:0.#}m.",
                 ["RateOutOfRange"] = "Refresh rate must be between {0:0.##} and {1:0.##} seconds.",
-                ["SettingChanged"] = "SmartRadar {0} set to {1}.",
-                ["FilterChanged"] = "SmartRadar {0} filter set to {1}.",
-                ["SettingsReset"] = "SmartRadar settings reset to defaults.",
-                ["Help"] = "SmartRadar commands:\n/radar - toggle\n/radar <players|stashes|tcs|all> [distance] [rate]\n/radar on|off|status|reset|ui\n/radar mode <mode>\n/radar layer <players|npcs|loot|stashes|tcs> [on|off]\n/radar distance <meters>\n/radar rate <seconds>\n/radar for <seconds>\n/radar arrows|voice|sleepers|vanished|extended|tclinks [on|off]\n/radar filter name <text|off>\n/radar filter team <all|mine|others|solo>\n/radar filter auth <all|players|staff|moderators|owners>\n/radar filter safezone <all|inside|outside>\n/radar findid <steamid>\n/radar buildings <twig|unprivileged>\n/radar drops [distance]\nLegacy: /radar <rate> <distance> <mode>",
+                ["SettingChanged"] = "SmartRecon {0} set to {1}.",
+                ["FilterChanged"] = "SmartRecon {0} filter set to {1}.",
+                ["SettingsReset"] = "SmartRecon settings reset to defaults.",
+                ["Help"] = "SmartRecon commands:\n/radar - toggle\n/radar <players|stashes|tcs|all> [distance] [rate]\n/radar on|off|status|reset|ui\n/radar mode <mode>\n/radar layer <players|npcs|loot|stashes|tcs> [on|off]\n/radar distance <meters>\n/radar rate <seconds>\n/radar for <seconds>\n/radar arrows|voice|sleepers|vanished|extended|tclinks [on|off]\n/radar filter name <text|off>\n/radar filter team <all|mine|others|solo>\n/radar filter auth <all|players|staff|moderators|owners>\n/radar filter safezone <all|inside|outside>\n/radar findid <steamid>\n/radar buildings <twig|unprivileged>\n/radar drops [distance]\nLegacy: /radar <rate> <distance> <mode>",
                 ["VanishedUnavailable"] = "Viewing vanished players is disabled or not permitted.",
-                ["ConsolePlayerOnly"] = "SmartRadar must be controlled by an in-game player.",
-                ["DurationSet"] = "SmartRadar will automatically disable in {0:0.#} seconds.",
+                ["ConsolePlayerOnly"] = "SmartRecon must be controlled by an in-game player.",
+                ["DurationSet"] = "SmartRecon will automatically disable in {0:0.#} seconds.",
                 ["DurationTooHigh"] = "Maximum temporary radar duration is {0:0.#} seconds.",
-                ["Expired"] = "SmartRadar's temporary duration expired.",
-                ["VanishEnabled"] = "SmartRadar vanish enabled. Investigative radar: {0}.",
-                ["VanishDisabled"] = "SmartRadar vanish disabled. Investigative radar stopped.",
-                ["VanishAlreadyEnabled"] = "SmartRadar vanish is already enabled.",
-                ["VanishAlreadyDisabled"] = "SmartRadar vanish is already disabled.",
+                ["Expired"] = "SmartRecon's temporary duration expired.",
+                ["VanishEnabled"] = "SmartRecon vanish enabled. Investigative radar: {0}.",
+                ["VanishDisabled"] = "SmartRecon vanish disabled. Investigative radar stopped.",
+                ["VanishAlreadyEnabled"] = "SmartRecon vanish is already enabled.",
+                ["VanishAlreadyDisabled"] = "SmartRecon vanish is already disabled.",
                 ["VanishPermanent"] = "Your permanent-vanish permission prevents reappearing.",
-                ["VanishStatus"] = "SmartRadar vanish: {0} | radar: {1} | arrows: {2}.",
-                ["VanishHelp"] = "SmartRadar vanish commands:\n/vanish - toggle\n/vanish on|off|status\n/inv <name|steamid> - inspect a player's inventory",
+                ["VanishStatus"] = "SmartRecon vanish: {0} | radar: {1} | arrows: {2}.",
+                ["VanishHelp"] = "SmartRecon vanish commands:\n/vanish - toggle\n/vanish on|off|status\n/inv <name|steamid> - inspect a player's inventory",
                 ["InventoryNoTarget"] = "No matching active or sleeping player was found for '{0}'.",
                 ["InventoryUsage"] = "Usage: /inv <name or Steam ID>, or look directly at a nearby player and use /inv.",
                 ["VanishRadarUnavailable"] = "Vanish enabled, but investigative radar could not start because its command or mode permissions are missing.",
@@ -928,16 +1011,16 @@ namespace Oxide.Plugins
             BasePlayer player = BasePlayer.FindByID(userId);
             if (player == null) return;
 
-            if (string.Equals(permissionName, PermUse, StringComparison.OrdinalIgnoreCase) && !HasPermission(player, PermUse))
+            if (PermissionMatches(permissionName, PermUse) && !HasPermission(player, PermUse))
                 StopRadar(player, true);
-            else if (string.Equals(permissionName, PermVanish, StringComparison.OrdinalIgnoreCase) &&
+            else if (PermissionMatches(permissionName, PermVanish) &&
                      !HasPermission(player, PermVanish) && IsBuiltInVanished(player))
                 ExitVanish(player, true, false, false);
         }
 
         private void OnUserPermissionGranted(string id, string permissionName)
         {
-            if (!string.Equals(permissionName, PermVanishPermanent, StringComparison.OrdinalIgnoreCase)) return;
+            if (!PermissionMatches(permissionName, PermVanishPermanent)) return;
             ulong userId;
             if (!ulong.TryParse(id, out userId)) return;
             BasePlayer player = BasePlayer.FindByID(userId);
@@ -1353,7 +1436,7 @@ namespace Oxide.Plugins
             Reply(player, "Help");
         }
 
-        [ConsoleCommand("smartradar.ui")]
+        [ConsoleCommand("smartrecon.ui")]
         private void CommandRadarUi(ConsoleSystem.Arg arg)
         {
             BasePlayer player = arg == null ? null : arg.Player();
@@ -1430,6 +1513,12 @@ namespace Oxide.Plugins
             ShowRadarUi(player, session);
         }
 
+        [ConsoleCommand("smartradar.ui")]
+        private void CommandLegacyRadarUi(ConsoleSystem.Arg arg)
+        {
+            CommandRadarUi(arg);
+        }
+
         private void ShowRadarUi(BasePlayer player, RadarSession session)
         {
             DestroyRadarUi(player);
@@ -1447,7 +1536,7 @@ namespace Oxide.Plugins
 
             elements.Add(new CuiLabel
             {
-                Text = { Text = "SMART INVESTIGATION", FontSize = 14, Align = TextAnchor.MiddleLeft, Color = settings.TextColor },
+                Text = { Text = "SMARTRECON", FontSize = 14, Align = TextAnchor.MiddleLeft, Color = settings.TextColor },
                 RectTransform = { AnchorMin = "0.06 0.895", AnchorMax = "0.84 0.985" }
             }, RadarUiName);
             elements.Add(new CuiLabel
@@ -1457,7 +1546,7 @@ namespace Oxide.Plugins
             }, RadarUiName);
             elements.Add(new CuiButton
             {
-                Button = { Color = "0 0 0 0", Command = "smartradar.ui close" },
+                Button = { Color = "0 0 0 0", Command = "smartrecon.ui close" },
                 RectTransform = { AnchorMin = "0.86 0.91", AnchorMax = "0.97 0.98" },
                 Text = { Text = "×", FontSize = 17, Align = TextAnchor.MiddleCenter, Color = settings.TextColor }
             }, RadarUiName);
@@ -1491,7 +1580,7 @@ namespace Oxide.Plugins
             float xMax = column == 0 ? 0.485f : 0.95f;
             elements.Add(new CuiButton
             {
-                Button = { Color = enabled ? settings.EnabledColor : settings.DisabledColor, Command = "smartradar.ui " + action },
+                Button = { Color = enabled ? settings.EnabledColor : settings.DisabledColor, Command = "smartrecon.ui " + action },
                 RectTransform = { AnchorMin = xMin.ToString("0.###", CultureInfo.InvariantCulture) + " " + yMin.ToString("0.###", CultureInfo.InvariantCulture), AnchorMax = xMax.ToString("0.###", CultureInfo.InvariantCulture) + " " + yMax.ToString("0.###", CultureInfo.InvariantCulture) },
                 Text = { Text = (enabled ? "●  " : "○  ") + label, FontSize = 10, Align = TextAnchor.MiddleCenter, Color = settings.TextColor }
             }, RadarUiName);
@@ -1846,10 +1935,14 @@ namespace Oxide.Plugins
             if (_config.UserInterface.ShowOnRadarStart) ShowRadarUi(player, session);
 
             if (_config.General.LogUsage)
-                Puts(player.displayName + " (" + player.UserIDString + ") enabled SmartRadar in " + preferences.Mode + " mode.");
+                Puts(player.displayName + " (" + player.UserIDString + ") enabled SmartRecon in " + preferences.Mode + " mode.");
 
             if (notify) Reply(player, "Enabled", preferences.Mode, preferences.Distance, preferences.RefreshRate);
-            if (newlyStarted) Interface.CallHook("OnSmartRadarActivated", player);
+            if (newlyStarted)
+            {
+                Interface.CallHook("OnSmartReconActivated", player);
+                Interface.CallHook("OnSmartRadarActivated", player);
+            }
         }
 
         private void StopRadar(BasePlayer player, bool notify)
@@ -1858,9 +1951,13 @@ namespace Oxide.Plugins
             bool removed = _sessions.Remove(player.userID);
             DestroyRadarUi(player);
             if (removed) RefreshVoiceWatcherCount();
-            if (removed) Interface.CallHook("OnSmartRadarDeactivated", player);
+            if (removed)
+            {
+                Interface.CallHook("OnSmartReconDeactivated", player);
+                Interface.CallHook("OnSmartRadarDeactivated", player);
+            }
             if (removed && _config.General.LogUsage)
-                Puts(player.displayName + " (" + player.UserIDString + ") disabled SmartRadar.");
+                Puts(player.displayName + " (" + player.UserIDString + ") disabled SmartRecon.");
 
             if (!notify) return;
             Reply(player, removed ? "Disabled" : "AlreadyDisabled");
@@ -2788,8 +2885,8 @@ namespace Oxide.Plugins
             Pool.FreeUnmanaged(ref connections);
 
             if (ServerOcclusion.OcclusionEnabled) player.OcclusionMakeSubscribersForget();
-            if (player.GetComponent<SmartVanishController>() == null)
-                player.gameObject.AddComponent<SmartVanishController>();
+            if (player.GetComponent<SmartReconVanishController>() == null)
+                player.gameObject.AddComponent<SmartReconVanishController>();
 
             if (_config.Vanish.EnableNoclip && !player.isMounted)
             {
@@ -2815,7 +2912,7 @@ namespace Oxide.Plugins
             PlayVanishFeedbackSound(player, true);
 
             if (_config.Vanish.LogUsage)
-                Puts(player.displayName + " (" + player.UserIDString + ") entered SmartRadar vanish.");
+                Puts(player.displayName + " (" + player.UserIDString + ") entered SmartRecon vanish.");
             if (notify && _config.Vanish.EnableNotifications)
                 Reply(player, "VanishEnabled", radarStarted ? "ON" : "OFF");
             if (notify && _config.Investigation.StartRadarOnVanish && !radarStarted)
@@ -2873,7 +2970,7 @@ namespace Oxide.Plugins
             Interface.CallHook("OnSmartInvestigationEnded", player);
             PlayVanishFeedbackSound(player, false);
             if (_config.Vanish.LogUsage)
-                Puts(player.displayName + " (" + player.UserIDString + ") left SmartRadar vanish.");
+                Puts(player.displayName + " (" + player.UserIDString + ") left SmartRecon vanish.");
             if (notify && _config.Vanish.EnableNotifications) Reply(player, "VanishDisabled");
             return true;
         }
@@ -2951,7 +3048,7 @@ namespace Oxide.Plugins
         private void DetachVanishRuntime(BasePlayer player)
         {
             if (player == null) return;
-            SmartVanishController controller = player.GetComponent<SmartVanishController>();
+            SmartReconVanishController controller = player.GetComponent<SmartReconVanishController>();
             if (controller != null) UnityEngine.Object.Destroy(controller);
         }
 
@@ -3097,8 +3194,8 @@ namespace Oxide.Plugins
             if (!IsBuiltInVanished(player)) return;
             NextTick(delegate
             {
-                if (player != null && player.IsConnected && player.GetComponent<SmartVanishController>() == null)
-                    player.gameObject.AddComponent<SmartVanishController>();
+                if (player != null && player.IsConnected && player.GetComponent<SmartReconVanishController>() == null)
+                    player.gameObject.AddComponent<SmartReconVanishController>();
             });
         }
 
@@ -3281,7 +3378,7 @@ namespace Oxide.Plugins
             if (mountable != null) mountable.AttemptMount(player, true);
         }
 
-        public sealed class SmartVanishController : FacepunchBehaviour
+        public sealed class SmartReconVanishController : FacepunchBehaviour
         {
             private BasePlayer _player;
             private Vector3 _originalScale;
@@ -3365,28 +3462,49 @@ namespace Oxide.Plugins
 
         private void RegisterPermissions()
         {
-            permission.RegisterPermission(PermUse, this);
-            permission.RegisterPermission(PermPlayers, this);
-            permission.RegisterPermission(PermStashes, this);
-            permission.RegisterPermission(PermCupboards, this);
-            permission.RegisterPermission(PermArrows, this);
-            permission.RegisterPermission(PermVoice, this);
-            permission.RegisterPermission(PermSleepers, this);
-            permission.RegisterPermission(PermExtendedRange, this);
-            permission.RegisterPermission(PermSeeVanished, this);
-            permission.RegisterPermission(PermSeeOwners, this);
-            permission.RegisterPermission(PermVanish, this);
-            permission.RegisterPermission(PermVanishPermanent, this);
-            permission.RegisterPermission(PermVanishUnlock, this);
-            permission.RegisterPermission(PermVanishDamage, this);
-            permission.RegisterPermission(PermVanishInventory, this);
-            permission.RegisterPermission(PermVanishTeleport, this);
-            permission.RegisterPermission(PermNpcs, this);
-            permission.RegisterPermission(PermLoot, this);
-            permission.RegisterPermission(PermExtended, this);
-            permission.RegisterPermission(PermTcInfo, this);
-            permission.RegisterPermission(PermUi, this);
-            permission.RegisterPermission(PermForensics, this);
+            RegisterPermissionPair(PermUse);
+            RegisterPermissionPair(PermPlayers);
+            RegisterPermissionPair(PermStashes);
+            RegisterPermissionPair(PermCupboards);
+            RegisterPermissionPair(PermArrows);
+            RegisterPermissionPair(PermVoice);
+            RegisterPermissionPair(PermSleepers);
+            RegisterPermissionPair(PermExtendedRange);
+            RegisterPermissionPair(PermSeeVanished);
+            RegisterPermissionPair(PermSeeOwners);
+            RegisterPermissionPair(PermVanish);
+            RegisterPermissionPair(PermVanishPermanent);
+            RegisterPermissionPair(PermVanishUnlock);
+            RegisterPermissionPair(PermVanishDamage);
+            RegisterPermissionPair(PermVanishInventory);
+            RegisterPermissionPair(PermVanishTeleport);
+            RegisterPermissionPair(PermNpcs);
+            RegisterPermissionPair(PermLoot);
+            RegisterPermissionPair(PermExtended);
+            RegisterPermissionPair(PermTcInfo);
+            RegisterPermissionPair(PermUi);
+            RegisterPermissionPair(PermForensics);
+        }
+
+        private void RegisterPermissionPair(string permissionName)
+        {
+            permission.RegisterPermission(permissionName, this);
+            string legacyPermission = LegacyPermissionName(permissionName);
+            if (!string.Equals(legacyPermission, permissionName, StringComparison.OrdinalIgnoreCase))
+                permission.RegisterPermission(legacyPermission, this);
+        }
+
+        private static string LegacyPermissionName(string permissionName)
+        {
+            if (string.IsNullOrEmpty(permissionName) || !permissionName.StartsWith(CurrentPermissionPrefix, StringComparison.OrdinalIgnoreCase))
+                return permissionName;
+            return permissionName.Replace(CurrentPermissionPrefix, LegacyPermissionPrefix);
+        }
+
+        private static bool PermissionMatches(string suppliedPermission, string currentPermission)
+        {
+            return string.Equals(suppliedPermission, currentPermission, StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(suppliedPermission, LegacyPermissionName(currentPermission), StringComparison.OrdinalIgnoreCase);
         }
 
         private bool HasExplicitPermission(BasePlayer player, string permissionName)
@@ -3396,7 +3514,8 @@ namespace Oxide.Plugins
             if (directPermissions == null) return false;
             for (int i = 0; i < directPermissions.Length; i++)
             {
-                if (string.Equals(directPermissions[i], permissionName, StringComparison.OrdinalIgnoreCase)) return true;
+                if (string.Equals(directPermissions[i], permissionName, StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(directPermissions[i], LegacyPermissionName(permissionName), StringComparison.OrdinalIgnoreCase)) return true;
             }
             return false;
         }
@@ -3404,7 +3523,8 @@ namespace Oxide.Plugins
         private bool HasPermission(BasePlayer player, string permissionName)
         {
             if (player == null) return false;
-            bool explicitPermission = permission.UserHasPermission(player.UserIDString, permissionName);
+            bool explicitPermission = permission.UserHasPermission(player.UserIDString, permissionName) ||
+                permission.UserHasPermission(player.UserIDString, LegacyPermissionName(permissionName));
             if (permissionName == PermSeeVanished || permissionName == PermSeeOwners)
                 return explicitPermission || (_config.General.AdminsBypassPermissions && GetAuthLevel(player) >= 2);
             if (_config.General.AdminsBypassPermissions && GetAuthLevel(player) > 0) return true;

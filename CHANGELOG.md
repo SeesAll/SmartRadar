@@ -1,10 +1,32 @@
 # Changelog
 
-All notable changes to SmartRadar are documented in this file.
+All notable changes to SmartRecon, formerly SmartRadar, are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+
+## [2.0.0] - 2026-08-07
+
+### Renamed
+
+- SmartRadar is now SmartRecon to represent the complete investigation suite rather than only its radar component.
+- Plugin source, class, UI branding, configuration example, GitHub repository, release assets, documentation, and audit-log identity now use SmartRecon.
+- Primary permissions now use the `smartrecon.*` namespace.
+
+### Added
+
+- Automatic import of legacy `SmartRadar.json` configuration and stored data when SmartRecon has not created replacements yet.
+- Backward-compatible recognition and registration of every existing `smartradar.*` permission.
+- `/recon` and `/smartrecon` command aliases while retaining `/radar`, `/sradar`, and legacy `/smartradar`.
+- `OnSmartReconActivated` and `OnSmartReconDeactivated` hooks. Legacy SmartRadar hook names continue to be emitted for integrations during migration.
+- Legacy `smartradar.ui` console actions remain accepted by older cached UI elements.
+
+### Migration
+
+- Existing saved radar profiles, UI preferences, filters, and persisted vanish state are copied into SmartRecon on first load.
+- Legacy configuration, data, permission grants, and log files are left untouched as recovery copies.
+- Servers must remove `SmartRadar.cs` when installing `SmartRecon.cs`; the two identities should not be loaded together.
 
 ## [1.3.1] - 2026-08-07
 
@@ -172,13 +194,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Dynamic voice-hook subscription and idle player-index suspension.
 - Configuration validation, localization, safe lifecycle cleanup, and corrupt-data recovery.
 
-[Unreleased]: https://github.com/SeesAll/SmartRadar/compare/1.3.1...HEAD
-[1.3.1]: https://github.com/SeesAll/SmartRadar/compare/1.3.0...1.3.1
-[1.3.0]: https://github.com/SeesAll/SmartRadar/compare/1.2.3...1.3.0
-[1.2.3]: https://github.com/SeesAll/SmartRadar/compare/1.2.2...1.2.3
-[1.2.2]: https://github.com/SeesAll/SmartRadar/compare/1.2.1...1.2.2
-[1.2.1]: https://github.com/SeesAll/SmartRadar/compare/1.2.0...1.2.1
-[1.2.0]: https://github.com/SeesAll/SmartRadar/compare/1.1.1...1.2.0
-[1.1.1]: https://github.com/SeesAll/SmartRadar/compare/1.1.0...1.1.1
-[1.1.0]: https://github.com/SeesAll/SmartRadar/compare/1.0.0...1.1.0
-[1.0.0]: https://github.com/SeesAll/SmartRadar/releases/tag/1.0.0
+[Unreleased]: https://github.com/SeesAll/SmartRecon/compare/2.0.0...HEAD
+[2.0.0]: https://github.com/SeesAll/SmartRecon/compare/1.3.1...2.0.0
+[1.3.1]: https://github.com/SeesAll/SmartRecon/compare/1.3.0...1.3.1
+[1.3.0]: https://github.com/SeesAll/SmartRecon/compare/1.2.3...1.3.0
+[1.2.3]: https://github.com/SeesAll/SmartRecon/compare/1.2.2...1.2.3
+[1.2.2]: https://github.com/SeesAll/SmartRecon/compare/1.2.1...1.2.2
+[1.2.1]: https://github.com/SeesAll/SmartRecon/compare/1.2.0...1.2.1
+[1.2.0]: https://github.com/SeesAll/SmartRecon/compare/1.1.1...1.2.0
+[1.1.1]: https://github.com/SeesAll/SmartRecon/compare/1.1.0...1.1.1
+[1.1.0]: https://github.com/SeesAll/SmartRecon/compare/1.0.0...1.1.0
+[1.0.0]: https://github.com/SeesAll/SmartRecon/releases/tag/1.0.0
