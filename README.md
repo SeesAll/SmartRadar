@@ -19,6 +19,7 @@ Version: **2.0.0**
 - Supports temporary radar sessions that automatically expire.
 - Provides true built-in network invisibility, noclip, metabolism protection, anti-hack bypass, damage protection, silent effects, and optional investigative interaction.
 - Automatically starts radar with vision arrows when an administrator vanishes and stops radar when they reappear.
+- Teleports permitted vanished administrators to right-click map markers, then automatically removes the temporary marker.
 - Hides vanished players and server owners from unauthorized radar users by default.
 - Does not modify player authorization flags.
 - Includes bounded one-shot searches for Steam ID associations, twig/unprivileged building blocks, and nearby dropped loot.
@@ -28,6 +29,8 @@ Version: **2.0.0**
 SmartRecon is intended for server owners who want capable administrative visibility without giving every staff member unrestricted access or letting each radar session repeatedly scan the entire server. Its shared spatial indexes, staggered scheduler, result limits, and drawing budget are designed to keep workload predictable as player and entity counts grow.
 
 Compared with using separate radar and vanish plugins, SmartRecon provides one coordinated investigative lifecycle. Entering vanish can immediately enable the administrator's saved radar profile with viewing-direction arrows forced on; leaving vanish shuts that radar session down. Player, sleeper, stash, and tool-cupboard tracking, temporary sessions, filters, granular permissions, extended-range control, and vanished-staff privacy are managed by the same plugin.
+
+That same workflow extends to rapid movement across the map. A vanished administrator with `smartrecon.vanish.teleport` can right-click a destination on the Rust map and teleport there immediately; SmartRecon removes the temporary marker after arrival so investigative notes do not accumulate. Ordinary markers remain untouched while the administrator is visible, and marker teleporting is disabled during native Rust spectating. Configurable landing behavior, a short anti-double-fire interval, and optional audit logging make the feature fast for staff without turning normal map-marker use into a teleport command.
 
 SmartRecon replaces the need to run separate radar and vanish plugins for this workflow. Its vanish system removes administrators from normal networking and AI awareness, disables their collider, suppresses their signals and effects, protects them from damage, and can provide safe inventory or locked-entity interaction for authorized investigators. Expensive protection hooks are enabled only while at least one administrator is vanished.
 
