@@ -6,6 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [1.2.3] - 2026-08-06
+
+### Fixed
+
+- Humanoid NPCs are now registered from entity spawn/kill events and the initial server-entity pass. Rust does not reliably place scientists and other server-controlled humanoids in `BasePlayer.activePlayerList`, which prevented the previous NPC detection from drawing them.
+- Humanoid NPCs are excluded from the real-player spatial index to prevent duplicate labels on NPC types that do appear in both collections.
+
+### Changed
+
+- Humanoid NPC labels use their display name when available and the player-height label offset.
+
 ## [1.2.2] - 2026-08-06
 
 ### Fixed
@@ -131,7 +142,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Dynamic voice-hook subscription and idle player-index suspension.
 - Configuration validation, localization, safe lifecycle cleanup, and corrupt-data recovery.
 
-[Unreleased]: https://github.com/SeesAll/SmartRadar/compare/1.2.2...HEAD
+[Unreleased]: https://github.com/SeesAll/SmartRadar/compare/1.2.3...HEAD
+[1.2.3]: https://github.com/SeesAll/SmartRadar/compare/1.2.2...1.2.3
 [1.2.2]: https://github.com/SeesAll/SmartRadar/compare/1.2.1...1.2.2
 [1.2.1]: https://github.com/SeesAll/SmartRadar/compare/1.2.0...1.2.1
 [1.2.0]: https://github.com/SeesAll/SmartRadar/compare/1.1.1...1.2.0

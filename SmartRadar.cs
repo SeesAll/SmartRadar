@@ -19,7 +19,7 @@ using UnityEngine;
 
 namespace Oxide.Plugins
 {
-    [Info("SmartRadar", "SeesAll", "1.2.2")]
+    [Info("SmartRadar", "SeesAll", "1.2.3")]
     [Description("Unified administrative vanish and high-performance radar for Rust")]
     public class SmartRadar : RustPlugin
     {
@@ -2071,7 +2071,7 @@ namespace Oxide.Plugins
             _activePlayerIndex.Clear();
             foreach (BasePlayer player in BasePlayer.activePlayerList)
             {
-                if (player == null || (!player.IsConnected && !IsHumanoidNpc(player))) continue;
+                if (player == null || !player.IsConnected || IsHumanoidNpc(player)) continue;
                 AddToIndex(_activePlayerIndex, GetCellKey(player.transform.position), player);
             }
             RebuildNpcEntityIndex();
@@ -2155,7 +2155,9 @@ namespace Oxide.Plugins
 
         private static bool IsTrackedNpcEntity(BaseEntity entity)
         {
-            if (entity == null || entity is BasePlayer) return false;
+            if (entity == null) return false;
+            BasePlayer humanoidNpc = entity as BasePlayer;
+            if (humanoidNpc != null) return IsHumanoidNpc(humanoidNpc);
             return entity is BaseNpc || HasTypeInHierarchy(entity.GetType(), "BaseNPC2") || entity is FarmableAnimal ||
                 entity is WildlifeHazard || entity is SimpleShark || entity is RidableHorse ||
                 entity is TravellingVendor;
@@ -2367,7 +2369,9 @@ namespace Oxide.Plugins
                 string label = "<size=13><color=#FFB347>" + GetNpcEntityLabel(entity) + "</color>" + health +
                     " | <color=#2F6FFF>" + Mathf.RoundToInt(Mathf.Sqrt(candidate.SqrDistance)) + "</color>M</size>";
                 viewer.SendConsoleCommand("ddraw.text", lifetime, _npcDrawColor,
-                    entity.transform.position + Vector3.up * Mathf.Max(1f, _config.Display.StaticLabelHeight), label);
+                    entity.transform.position + Vector3.up * (entity is BasePlayer
+                        ? _config.Display.PlayerLabelHeight
+                        : Mathf.Max(1f, _config.Display.StaticLabelHeight)), label);
                 draws++;
             }
             return draws;
@@ -2375,6 +2379,10 @@ namespace Oxide.Plugins
 
         private static string GetNpcEntityLabel(BaseEntity entity)
         {
+            BasePlayer humanoidNpc = entity as BasePlayer;
+            if (humanoidNpc != null && !string.IsNullOrWhiteSpace(humanoidNpc.displayName) &&
+                !string.Equals(humanoidNpc.displayName, humanoidNpc.UserIDString, StringComparison.Ordinal))
+                return EscapeRichText(humanoidNpc.displayName).ToUpperInvariant();
             string name = entity == null ? string.Empty : entity.ShortPrefabName;
             if (string.IsNullOrEmpty(name)) return "NPC";
             string lower = name.ToLowerInvariant();

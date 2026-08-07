@@ -2,7 +2,7 @@
 
 SmartRadar is a unified administrative vanish and high-performance radar plugin for Rust servers. It is designed for investigative work and runs as one self-contained plugin on Oxide or Carbon.
 
-Version: **1.2.2**
+Version: **1.2.3**
 
 ## Highlights
 
@@ -268,7 +268,7 @@ When preference persistence is enabled, SmartRadar stores each administrator's l
 
 SmartRadar is implemented as an Oxide-compatible `RustPlugin` and does not depend on Carbon-only APIs. Its self-contained Harmony patches use the patching support supplied by the server framework to isolate vanished-player sounds and effects. The same source is intended for Oxide and Carbon.
 
-Version 1.2.2 was compile-checked against local Rust/Oxide assemblies. Its vanish movement updater supports both known Rust `UpdateGroups` signatures, and its animal tracking recognizes both older and newer Rust NPC base types. Final runtime validation should be performed on a current test server before production deployment.
+Version 1.2.3 was compile-checked against local Rust/Oxide assemblies. Its vanish movement updater supports both known Rust `UpdateGroups` signatures, and its NPC tracking recognizes both older and newer Rust NPC base types without depending on the connected-player list. Final runtime validation should be performed on a current test server before production deployment.
 
 ## Changelog
 
