@@ -2,7 +2,7 @@
 
 SmartRecon is a unified Rust administration and investigation suite combining high-performance radar, secure vanish, player inspection, forensic tools, and vanish-only map teleportation. It runs as one self-contained plugin on Oxide or Carbon.
 
-Version: **2.2.0**
+Version: **2.3.0**
 
 ## Highlights
 
@@ -22,7 +22,7 @@ Version: **2.2.0**
 - Automatically starts radar with vision arrows during native Rust spectating and follows the watched player.
 - Makes the investigation panel directly clickable during native spectating without requiring the inventory cursor.
 - Keeps the investigation panel sharp above Rust's inventory blur for easy reading and clicking.
-- Lets each administrator drag the panel by its title and remembers their personal screen position.
+- Lets each administrator position the panel with a compact arrow controller using selectable 1%, 5%, or 10% movement steps, then save or cancel the preview.
 - Teleports permitted vanished administrators to right-click map markers, then automatically removes the temporary marker.
 - Hides vanished players and server owners from unauthorized radar users by default.
 - Does not modify player authorization flags.
@@ -68,6 +68,7 @@ Rust moderators and owners bypass normal SmartRecon permissions by default throu
 /radar status
 /radar for 60
 /radar ui
+/radar ui move
 /radar ui reset
 /radar help
 ```
@@ -81,7 +82,7 @@ With the default configuration:
 1. An authorized administrator runs `/vanish`.
 2. SmartRecon makes the administrator invisible, enables noclip and protections, and starts the administrator's saved radar profile.
 3. Player vision arrows are forced on for that temporary radar session without changing the saved arrows preference.
-4. A compact right-side panel exposes Players, NPCs, Loot, Stashes, Tool Cupboards, Sleepers, Vision/Arrows, Extended Info, TC Links, and Voice toggles. Open the normal inventory screen to obtain a cursor while vanished; SmartRecon renders above the inventory blur so the controls remain sharp. During native spectating, SmartRecon supplies the cursor automatically. Drag the title beside the `↕` indicator to save a personal panel position.
+4. A compact right-side panel exposes Players, NPCs, Loot, Stashes, Tool Cupboards, Sleepers, Vision/Arrows, Extended Info, TC Links, and Voice toggles. Open the normal inventory screen to obtain a cursor while vanished; SmartRecon renders above the inventory blur so the controls remain sharp. During native spectating, SmartRecon supplies the cursor automatically. Use `/radar ui move` to open the positioning controller, preview movement in 1%, 5%, or 10% steps, and then Save or Cancel.
 5. With `smartrecon.vanish.teleport`, placing a map marker instantly teleports the vanished administrator to that location and removes the temporary marker.
 6. The administrator investigates using radar filters and, when permitted, inventory or reload-key interaction.
 7. Running `/vanish` again makes the administrator visible, stops radar, and removes the panel automatically.
@@ -123,6 +124,7 @@ All radar commands require `smartrecon.use`. Commands that display or enable a p
 | `/radar status` | Reports whether radar is active and displays its mode, distance, refresh rate, toggles, filters, and remaining temporary duration. | None |
 | `/radar help` | Displays the built-in command summary. | None |
 | `/radar ui` | Shows or hides the investigation panel. Use the normal inventory cursor outside spectating; SmartRecon makes the panel directly clickable during native spectating. | `smartrecon.ui` |
+| `/radar ui move` | Opens a positioning controller with directional arrows, selectable 1%, 5%, and 10% steps, live preview, Reset, Cancel, and Save. | `smartrecon.ui` |
 | `/radar ui reset` | Removes the caller's personal panel position and restores the anchors configured by the server owner. | `smartrecon.ui` |
 | `/radar reset` | Restores the user's saved preferences to configured defaults. If the default mode is not permitted, the first permitted mode is selected instead. | At least one mode permission |
 | `/radar <players\|stashes\|tcs\|all> [distance] [rate]` | Selects a mode, optionally changes distance and refresh rate, and starts radar immediately. | Permission for every feature in the selected mode |
@@ -261,7 +263,7 @@ Important defaults:
 - Used teleport markers: removed automatically
 - Successful marker teleports: written to a separate audit log
 - Investigation panel: enabled and shown when radar starts
-- Personal title-drag panel positioning: enabled and saved per administrator
+- Personal panel positioning controller: enabled and saved per administrator
 - NPC, loot, extended-info, and TC-link layers: disabled until requested
 - Voice indicators: disabled
 - Sleeping players: disabled
@@ -273,17 +275,17 @@ Important defaults:
 - Vanish persistence: enabled
 - Noclip, metabolism protection, anti-hack bypass, and damage protection while vanished: enabled
 
-Configuration values are normalized on load to prevent unsafe scheduler intervals, ranges, cell sizes, result limits, and invalid or off-screen default UI anchors. `Allow administrators to move and save their panel position` controls personal title-drag positioning; disabling it uses the configured anchors for everyone without deleting saved positions.
+Configuration values are normalized on load to prevent unsafe scheduler intervals, ranges, cell sizes, result limits, and invalid or off-screen default UI anchors. `Allow administrators to move and save their panel position` controls the personal positioning controller; disabling it uses the configured anchors for everyone without deleting saved positions.
 
 ## Stored data
 
-When preference persistence is enabled, SmartRecon stores each administrator's last mode, distance, rate, toggles, and filters in its framework data directory. Personal panel positions are stored independently when administrators drag the title, and `/radar ui reset` removes the caller's saved position. When vanish persistence is enabled, SmartRecon also stores which administrators should remain vanished across disconnects or reloads. Active radar sessions and temporary expiry times are not restored independently; the investigative radar session is recreated when persisted vanish is restored.
+When preference persistence is enabled, SmartRecon stores each administrator's last mode, distance, rate, toggles, and filters in its framework data directory. Personal panel positions are stored independently only when administrators choose Save in the positioning controller; Cancel and unsaved previews do not write a position. `/radar ui reset` removes the caller's saved position. When vanish persistence is enabled, SmartRecon also stores which administrators should remain vanished across disconnects or reloads. Active radar sessions and temporary expiry times are not restored independently; the investigative radar session is recreated when persisted vanish is restored.
 
 ## Compatibility
 
 SmartRecon is implemented as an Oxide-compatible `RustPlugin` and does not depend on Carbon-only APIs. Its self-contained Harmony patches use the patching support supplied by the server framework to isolate vanished-player sounds and effects. The same source is intended for Oxide and Carbon.
 
-Version 2.2.0 was compile-checked against the local Rust/Oxide assembly set available on this PC. Its vanish movement updater supports both known Rust `UpdateGroups` signatures, and its NPC tracking recognizes both older and newer Rust NPC base types without depending on the connected-player list. Final runtime validation should be performed on a current test server before production deployment.
+Version 2.3.0 was compile-checked against the local Rust/Oxide assembly set available on this PC. Its vanish movement updater supports both known Rust `UpdateGroups` signatures, and its NPC tracking recognizes both older and newer Rust NPC base types without depending on the connected-player list. Final runtime validation should be performed on a current test server before production deployment.
 
 ## Changelog
 

@@ -19,7 +19,7 @@ using UnityEngine;
 
 namespace Oxide.Plugins
 {
-    [Info("SmartRecon", "SeesAll", "2.2.0")]
+    [Info("SmartRecon", "SeesAll", "2.3.0")]
     [Description("Unified administrative reconnaissance, vanish, radar, inspection, and rapid movement for Rust")]
     public class SmartRecon : RustPlugin
     {
@@ -53,7 +53,7 @@ namespace Oxide.Plugins
         private const string ModeAll = "all";
         private const string ModeCustom = "custom";
         private const string RadarUiName = "SmartRecon.InvestigationUI";
-        private const string RadarUiDragHandleName = "SmartRecon.InvestigationUI.DragHandle";
+        private const string RadarUiMoveName = "SmartRecon.InvestigationUI.Move";
         private const string DefaultUiAnchorMin = "0.8525 0.3305";
         private const string DefaultUiAnchorMax = "0.9925 0.6695";
         private const string PreviousDefaultUiAnchorMin = "0.8525 0.3225";
@@ -64,10 +64,9 @@ namespace Oxide.Plugins
         private const string IntermediateDefaultUiAnchorMax = "0.985 0.695";
         private const string OriginalDefaultUiAnchorMin = "0.815 0.275";
         private const string OriginalDefaultUiAnchorMax = "0.985 0.725";
-        private const float UiDragHandleMinX = 0.04f;
-        private const float UiDragHandleMaxX = 0.83f;
-        private const float UiDragHandleMinY = 0.905f;
-        private const float UiDragHandleMaxY = 0.985f;
+        private const float UiMoveFineStep = 0.01f;
+        private const float UiMoveMediumStep = 0.05f;
+        private const float UiMoveCoarseStep = 0.10f;
         private static readonly char[] UiAnchorSeparators = { ' ', '\t' };
 
         #endregion
@@ -109,7 +108,7 @@ namespace Oxide.Plugins
         private readonly Dictionary<ulong, VanishRuntimeState> _vanishRuntime = new Dictionary<ulong, VanishRuntimeState>();
         private readonly Dictionary<ulong, float> _forensicCooldowns = new Dictionary<ulong, float>();
         private readonly Dictionary<ulong, float> _mapTeleportCooldowns = new Dictionary<ulong, float>();
-        private readonly Dictionary<ulong, Timer> _uiDragTimers = new Dictionary<ulong, Timer>();
+        private readonly Dictionary<ulong, UserInterfaceMoveSession> _uiMoveSessions = new Dictionary<ulong, UserInterfaceMoveSession>();
 
         private float _nextPlayerIndexRebuild;
         private float _nextSleeperIndexRebuild;
@@ -658,6 +657,13 @@ namespace Oxide.Plugins
             public float CenterY;
         }
 
+        private sealed class UserInterfaceMoveSession
+        {
+            public Vector2 PreviewCenter;
+            public float Step = UiMoveFineStep;
+            public bool UseConfiguredDefault;
+        }
+
         private sealed class RadarPreferences
         {
             public string Mode;
@@ -815,7 +821,9 @@ namespace Oxide.Plugins
                 ["FilterChanged"] = "SmartRecon {0} filter set to {1}.",
                 ["SettingsReset"] = "SmartRecon settings reset to defaults.",
                 ["UiPositionReset"] = "SmartRecon panel position reset to the configured default.",
-                ["Help"] = "SmartRecon commands:\n/radar - toggle\n/radar <players|stashes|tcs|all> [distance] [rate]\n/radar on|off|status|reset|ui\n/radar ui reset - restore the configured panel position\n/radar mode <mode>\n/radar layer <players|npcs|loot|stashes|tcs> [on|off]\n/radar distance <meters>\n/radar rate <seconds>\n/radar for <seconds>\n/radar arrows|voice|sleepers|vanished|extended|tclinks [on|off]\n/radar filter name <text|off>\n/radar filter team <all|mine|others|solo>\n/radar filter auth <all|players|staff|moderators|owners>\n/radar filter safezone <all|inside|outside>\n/radar findid <steamid>\n/radar buildings <twig|unprivileged>\n/radar drops [distance]",
+                ["UiMoveRequiresRadar"] = "Start SmartRecon radar before opening the panel movement controls.",
+                ["UiMoveDisabled"] = "Personal panel positioning is disabled in the SmartRecon configuration.",
+                ["Help"] = "SmartRecon commands:\n/radar - toggle\n/radar <players|stashes|tcs|all> [distance] [rate]\n/radar on|off|status|reset|ui\n/radar ui move - open panel positioning controls\n/radar ui reset - restore the configured panel position\n/radar mode <mode>\n/radar layer <players|npcs|loot|stashes|tcs> [on|off]\n/radar distance <meters>\n/radar rate <seconds>\n/radar for <seconds>\n/radar arrows|voice|sleepers|vanished|extended|tclinks [on|off]\n/radar filter name <text|off>\n/radar filter team <all|mine|others|solo>\n/radar filter auth <all|players|staff|moderators|owners>\n/radar filter safezone <all|inside|outside>\n/radar findid <steamid>\n/radar buildings <twig|unprivileged>\n/radar drops [distance]",
                 ["VanishedUnavailable"] = "Viewing vanished players is disabled or not permitted.",
                 ["ConsolePlayerOnly"] = "SmartRecon must be controlled by an in-game player.",
                 ["DurationSet"] = "SmartRecon will automatically disable in {0:0.#} seconds.",
@@ -913,11 +921,7 @@ namespace Oxide.Plugins
             _vanishedPlayers.Clear();
             _vanishRuntime.Clear();
             _mapTeleportCooldowns.Clear();
-            foreach (Timer uiDragTimer in _uiDragTimers.Values)
-            {
-                if (uiDragTimer != null && !uiDragTimer.Destroyed) uiDragTimer.Destroy();
-            }
-            _uiDragTimers.Clear();
+            _uiMoveSessions.Clear();
             ClearIndexes();
             UnsubscribeVanishHooks();
             Instance = null;
@@ -962,12 +966,7 @@ namespace Oxide.Plugins
             _vanishStateCache.Remove(player.userID);
             _mapTeleportCooldowns.Remove(player.userID);
             _forensicCooldowns.Remove(player.userID);
-            Timer uiDragTimer;
-            if (_uiDragTimers.TryGetValue(player.userID, out uiDragTimer))
-            {
-                if (uiDragTimer != null && !uiDragTimer.Destroyed) uiDragTimer.Destroy();
-                _uiDragTimers.Remove(player.userID);
-            }
+            _uiMoveSessions.Remove(player.userID);
             if (_dataDirty) SaveData();
         }
 
@@ -1065,6 +1064,7 @@ namespace Oxide.Plugins
             if (PermissionMatches(permissionName, PermUi) && !HasPermission(player, PermUi))
             {
                 session.UiVisible = false;
+                _uiMoveSessions.Remove(player.userID);
                 DestroyRadarUi(player);
                 return;
             }
@@ -1272,11 +1272,39 @@ namespace Oxide.Plugins
                     }
                     if (args.Length > 1)
                     {
-                        if (!string.Equals(args[1], "reset", StringComparison.OrdinalIgnoreCase))
+                        string uiAction = args[1].ToLowerInvariant();
+                        if (uiAction == "move")
+                        {
+                            if (!_config.UserInterface.AllowPersonalPositioning)
+                            {
+                                Reply(player, "UiMoveDisabled");
+                                return;
+                            }
+                            if (session == null)
+                            {
+                                Reply(player, "UiMoveRequiresRadar");
+                                return;
+                            }
+
+                            Vector2 panelMin;
+                            Vector2 panelMax;
+                            GetUiBounds(player.userID, out panelMin, out panelMax);
+                            _uiMoveSessions[player.userID] = new UserInterfaceMoveSession
+                            {
+                                PreviewCenter = (panelMin + panelMax) * 0.5f,
+                                Step = UiMoveFineStep
+                            };
+                            preferences.ShowUi = true;
+                            MarkPreferencesChanged(session);
+                            ShowRadarUi(player, session);
+                            return;
+                        }
+                        if (uiAction != "reset")
                         {
                             Reply(player, "Help");
                             return;
                         }
+                        CancelRadarUiMove(player, false);
                         _storedData.UiPositions.Remove(player.userID);
                         _dataDirty = true;
                         SaveData();
@@ -1292,6 +1320,7 @@ namespace Oxide.Plugins
                         else
                         {
                             session.UiVisible = false;
+                            _uiMoveSessions.Remove(player.userID);
                             DestroyRadarUi(player);
                         }
                     }
@@ -1524,6 +1553,7 @@ namespace Oxide.Plugins
                 session.Preferences.ShowUi = false;
                 session.UiVisible = false;
                 MarkPreferencesChanged(session);
+                _uiMoveSessions.Remove(player.userID);
                 DestroyRadarUi(player);
                 return;
             }
@@ -1591,55 +1621,95 @@ namespace Oxide.Plugins
             ShowRadarUi(player, session);
         }
 
-        private void OnCuiDraggableDrag(BasePlayer player, string name, Vector3 position,
-            CommunityEntity.DraggablePositionSendType type)
+        [ConsoleCommand("smartrecon.uimove")]
+        private void CommandRadarUiMove(ConsoleSystem.Arg arg)
         {
-            if (player == null || name != RadarUiDragHandleName || !_config.UserInterface.AllowPersonalPositioning ||
-                type != CommunityEntity.DraggablePositionSendType.NormalizedScreen ||
-                !HasPermission(player, PermUse) || !HasPermission(player, PermUi) ||
-                float.IsNaN(position.x) || float.IsInfinity(position.x) ||
-                float.IsNaN(position.y) || float.IsInfinity(position.y))
+            BasePlayer player = arg == null ? null : arg.Player();
+            if (player == null || !_config.UserInterface.AllowPersonalPositioning ||
+                !HasPermission(player, PermUse) || !HasPermission(player, PermUi)) return;
+
+            RadarSession radarSession;
+            UserInterfaceMoveSession moveSession;
+            if (!_sessions.TryGetValue(player.userID, out radarSession) || radarSession == null ||
+                !_uiMoveSessions.TryGetValue(player.userID, out moveSession) || moveSession == null)
                 return;
 
-            RadarSession session;
-            if (!_sessions.TryGetValue(player.userID, out session) || session == null || !session.UiVisible) return;
-            ulong userId = player.userID;
-
-            Vector2 configuredMin;
-            Vector2 configuredMax;
-            GetConfiguredUiBounds(out configuredMin, out configuredMax);
-            Vector2 panelSize = configuredMax - configuredMin;
-            float handleCenterX = (UiDragHandleMinX + UiDragHandleMaxX) * 0.5f;
-            float handleCenterY = (UiDragHandleMinY + UiDragHandleMaxY) * 0.5f;
-            Vector2 droppedHandleCenter = new Vector2(position.x, 1f - position.y);
-            Vector2 panelCenter = droppedHandleCenter + new Vector2(
-                (0.5f - handleCenterX) * panelSize.x,
-                (0.5f - handleCenterY) * panelSize.y);
-            panelCenter = ClampUiCenter(panelCenter, panelSize);
-
-            _storedData.UiPositions[userId] = new UserInterfacePosition
+            string action = arg.GetString(0, string.Empty).ToLowerInvariant();
+            if (action == "cancel")
             {
-                CenterX = panelCenter.x,
-                CenterY = panelCenter.y
-            };
-            _dataDirty = true;
-
-            Timer pendingTimer;
-            if (_uiDragTimers.TryGetValue(userId, out pendingTimer) && pendingTimer != null && !pendingTimer.Destroyed)
-            {
-                pendingTimer.Reset();
+                CancelRadarUiMove(player, true);
                 return;
             }
-
-            _uiDragTimers[userId] = timer.Once(0.2f, delegate
+            if (action == "save")
             {
-                _uiDragTimers.Remove(userId);
-                if (_dataDirty) SaveData();
-                RadarSession activeSession;
-                if (player != null && player.IsConnected &&
-                    _sessions.TryGetValue(userId, out activeSession) && activeSession != null && activeSession.UiVisible)
-                    ShowRadarUi(player, activeSession);
-            });
+                if (moveSession.UseConfiguredDefault)
+                {
+                    _storedData.UiPositions.Remove(player.userID);
+                }
+                else
+                {
+                    _storedData.UiPositions[player.userID] = new UserInterfacePosition
+                    {
+                        CenterX = moveSession.PreviewCenter.x,
+                        CenterY = moveSession.PreviewCenter.y
+                    };
+                }
+                _dataDirty = true;
+                _uiMoveSessions.Remove(player.userID);
+                DestroyRadarMoveUi(player);
+                SaveData();
+                ShowRadarUi(player, radarSession);
+                return;
+            }
+            if (action == "reset")
+            {
+                Vector2 configuredMin;
+                Vector2 configuredMax;
+                GetConfiguredUiBounds(out configuredMin, out configuredMax);
+                moveSession.PreviewCenter = (configuredMin + configuredMax) * 0.5f;
+                moveSession.UseConfiguredDefault = true;
+            }
+            else if (action == "step")
+            {
+                string step = arg.GetString(1, string.Empty);
+                if (step == "1") moveSession.Step = UiMoveFineStep;
+                else if (step == "5") moveSession.Step = UiMoveMediumStep;
+                else if (step == "10") moveSession.Step = UiMoveCoarseStep;
+                else return;
+            }
+            else
+            {
+                Vector2 delta;
+                switch (action)
+                {
+                    case "up": delta = Vector2.up; break;
+                    case "down": delta = Vector2.down; break;
+                    case "left": delta = Vector2.left; break;
+                    case "right": delta = Vector2.right; break;
+                    default: return;
+                }
+
+                Vector2 configuredMin;
+                Vector2 configuredMax;
+                GetConfiguredUiBounds(out configuredMin, out configuredMax);
+                moveSession.PreviewCenter = ClampUiCenter(
+                    moveSession.PreviewCenter + delta * moveSession.Step,
+                    configuredMax - configuredMin);
+                moveSession.UseConfiguredDefault = false;
+            }
+
+            ShowRadarUi(player, radarSession);
+        }
+
+        private void CancelRadarUiMove(BasePlayer player, bool refreshPanel)
+        {
+            if (player == null) return;
+            _uiMoveSessions.Remove(player.userID);
+            DestroyRadarMoveUi(player);
+            if (!refreshPanel) return;
+            RadarSession session;
+            if (_sessions.TryGetValue(player.userID, out session) && session != null && session.Preferences.ShowUi == true)
+                ShowRadarUi(player, session);
         }
 
         private void GetUiBounds(ulong userId, out Vector2 panelMin, out Vector2 panelMax)
@@ -1650,8 +1720,14 @@ namespace Oxide.Plugins
             Vector2 panelSize = configuredMax - configuredMin;
             Vector2 center = (configuredMin + configuredMax) * 0.5f;
 
+            UserInterfaceMoveSession moveSession;
             UserInterfacePosition savedPosition;
             if (_config.UserInterface.AllowPersonalPositioning &&
+                _uiMoveSessions.TryGetValue(userId, out moveSession) && moveSession != null)
+            {
+                center = moveSession.PreviewCenter;
+            }
+            else if (_config.UserInterface.AllowPersonalPositioning &&
                 _storedData.UiPositions.TryGetValue(userId, out savedPosition) && savedPosition != null &&
                 !float.IsNaN(savedPosition.CenterX) && !float.IsInfinity(savedPosition.CenterX) &&
                 !float.IsNaN(savedPosition.CenterY) && !float.IsInfinity(savedPosition.CenterY))
@@ -1706,50 +1782,11 @@ namespace Oxide.Plugins
                 CursorEnabled = spectating
             }, parentLayer, RadarUiName);
 
-            if (settings.AllowPersonalPositioning)
+            elements.Add(new CuiLabel
             {
-                Vector2 panelSize = panelMax - panelMin;
-                Vector2 handleMin = panelMin + Vector2.Scale(panelSize, new Vector2(UiDragHandleMinX, UiDragHandleMinY));
-                Vector2 handleMax = panelMin + Vector2.Scale(panelSize, new Vector2(UiDragHandleMaxX, UiDragHandleMaxY));
-                elements.Add(new CuiElement
-                {
-                    Name = RadarUiDragHandleName,
-                    Parent = parentLayer,
-                    Components =
-                    {
-                        new CuiImageComponent { Color = "0 0 0 0" },
-                        new CuiRectTransformComponent { AnchorMin = FormatAnchor(handleMin), AnchorMax = FormatAnchor(handleMax) },
-                        new CuiDraggableComponent
-                        {
-                            LimitToParent = false,
-                            DropAnywhere = true,
-                            DragAlpha = 0.72f,
-                            KeepOnTop = false,
-                            PositionRPC = CommunityEntity.DraggablePositionSendType.NormalizedScreen,
-                            MoveToAnchor = true,
-                            RebuildAnchor = true
-                        }
-                    }
-                });
-                elements.Add(new CuiLabel
-                {
-                    Text = { Text = "SMARTRECON", FontSize = 13, Align = TextAnchor.MiddleLeft, Color = settings.TextColor },
-                    RectTransform = { AnchorMin = "0.025 0", AnchorMax = "0.78 1" }
-                }, RadarUiDragHandleName);
-                elements.Add(new CuiLabel
-                {
-                    Text = { Text = "↕", FontSize = 13, Align = TextAnchor.MiddleRight, Color = settings.AccentColor },
-                    RectTransform = { AnchorMin = "0.78 0", AnchorMax = "0.98 1" }
-                }, RadarUiDragHandleName);
-            }
-            else
-            {
-                elements.Add(new CuiLabel
-                {
-                    Text = { Text = "SMARTRECON", FontSize = 13, Align = TextAnchor.MiddleLeft, Color = settings.TextColor },
-                    RectTransform = { AnchorMin = "0.06 0.895", AnchorMax = "0.84 0.985" }
-                }, RadarUiName);
-            }
+                Text = { Text = "SMARTRECON", FontSize = 13, Align = TextAnchor.MiddleLeft, Color = settings.TextColor },
+                RectTransform = { AnchorMin = "0.06 0.895", AnchorMax = "0.84 0.985" }
+            }, RadarUiName);
             elements.Add(new CuiLabel
             {
                 Text = { Text = workflowStatus + "  •  RADAR ON", FontSize = 9, Align = TextAnchor.MiddleLeft, Color = settings.AccentColor },
@@ -1775,11 +1812,81 @@ namespace Oxide.Plugins
 
             elements.Add(new CuiLabel
             {
-                Text = { Text = spectating ? "Drag ↕ title • × closes • /radar ui reopens" : "Inventory for cursor • Drag ↕ title • /radar ui hides", FontSize = 8, Align = TextAnchor.MiddleCenter, Color = "0.62 0.68 0.72 1" },
+                Text = { Text = spectating ? "Click controls • /radar ui move repositions" : "Inventory for cursor • /radar ui move repositions", FontSize = 8, Align = TextAnchor.MiddleCenter, Color = "0.62 0.68 0.72 1" },
                 RectTransform = { AnchorMin = "0.04 0.066", AnchorMax = "0.96 0.166" }
             }, RadarUiName);
             CuiHelper.AddUi(player, elements);
             session.UiVisible = true;
+            if (_uiMoveSessions.ContainsKey(player.userID)) ShowRadarMoveUi(player);
+        }
+
+        private void ShowRadarMoveUi(BasePlayer player)
+        {
+            DestroyRadarMoveUi(player);
+            if (player == null || !_config.UserInterface.Enabled ||
+                !_config.UserInterface.AllowPersonalPositioning ||
+                !HasPermission(player, PermUse) || !HasPermission(player, PermUi)) return;
+
+            UserInterfaceMoveSession moveSession;
+            if (!_uiMoveSessions.TryGetValue(player.userID, out moveSession) || moveSession == null) return;
+
+            UserInterfaceSettings settings = _config.UserInterface;
+            string parentLayer = settings.RenderAboveInventoryBlur ? "Overlay" : "Hud";
+            CuiElementContainer elements = new CuiElementContainer();
+            elements.Add(new CuiPanel
+            {
+                Image = { Color = settings.PanelColor },
+                RectTransform = { AnchorMin = "0.43 0.15", AnchorMax = "0.57 0.45" },
+                CursorEnabled = true
+            }, parentLayer, RadarUiMoveName);
+
+            elements.Add(new CuiLabel
+            {
+                Text = { Text = "PANEL POSITION", FontSize = 12, Align = TextAnchor.MiddleLeft, Color = settings.TextColor },
+                RectTransform = { AnchorMin = "0.06 0.90", AnchorMax = "0.82 0.985" }
+            }, RadarUiMoveName);
+            elements.Add(new CuiButton
+            {
+                Button = { Color = "0 0 0 0", Command = "smartrecon.uimove cancel" },
+                RectTransform = { AnchorMin = "0.86 0.91", AnchorMax = "0.97 0.98" },
+                Text = { Text = "×", FontSize = 15, Align = TextAnchor.MiddleCenter, Color = settings.TextColor }
+            }, RadarUiMoveName);
+
+            AddUiMoveButton(elements, "↑", "up", "0.39 0.72", "0.61 0.86", settings.DisabledColor, settings.TextColor, 15);
+            AddUiMoveButton(elements, "←", "left", "0.14 0.56", "0.36 0.70", settings.DisabledColor, settings.TextColor, 15);
+            AddUiMoveButton(elements, "→", "right", "0.64 0.56", "0.86 0.70", settings.DisabledColor, settings.TextColor, 15);
+            AddUiMoveButton(elements, "↓", "down", "0.39 0.40", "0.61 0.54", settings.DisabledColor, settings.TextColor, 15);
+            elements.Add(new CuiLabel
+            {
+                Text = { Text = (moveSession.Step * 100f).ToString("0", CultureInfo.InvariantCulture) + "%", FontSize = 10, Align = TextAnchor.MiddleCenter, Color = settings.AccentColor },
+                RectTransform = { AnchorMin = "0.39 0.56", AnchorMax = "0.61 0.70" }
+            }, RadarUiMoveName);
+
+            AddUiMoveButton(elements, "1%", "step 1", "0.05 0.20", "0.32 0.31",
+                Mathf.Approximately(moveSession.Step, UiMoveFineStep) ? settings.EnabledColor : settings.DisabledColor,
+                settings.TextColor, 9);
+            AddUiMoveButton(elements, "5%", "step 5", "0.365 0.20", "0.635 0.31",
+                Mathf.Approximately(moveSession.Step, UiMoveMediumStep) ? settings.EnabledColor : settings.DisabledColor,
+                settings.TextColor, 9);
+            AddUiMoveButton(elements, "10%", "step 10", "0.68 0.20", "0.95 0.31",
+                Mathf.Approximately(moveSession.Step, UiMoveCoarseStep) ? settings.EnabledColor : settings.DisabledColor,
+                settings.TextColor, 9);
+
+            AddUiMoveButton(elements, "RESET", "reset", "0.05 0.055", "0.32 0.16", settings.DisabledColor, settings.TextColor, 8);
+            AddUiMoveButton(elements, "CANCEL", "cancel", "0.365 0.055", "0.635 0.16", "0.46 0.20 0.20 0.95", settings.TextColor, 8);
+            AddUiMoveButton(elements, "SAVE", "save", "0.68 0.055", "0.95 0.16", settings.EnabledColor, settings.TextColor, 8);
+            CuiHelper.AddUi(player, elements);
+        }
+
+        private static void AddUiMoveButton(CuiElementContainer elements, string label, string action,
+            string anchorMin, string anchorMax, string color, string textColor, int fontSize)
+        {
+            elements.Add(new CuiButton
+            {
+                Button = { Color = color, Command = "smartrecon.uimove " + action },
+                RectTransform = { AnchorMin = anchorMin, AnchorMax = anchorMax },
+                Text = { Text = label, FontSize = fontSize, Align = TextAnchor.MiddleCenter, Color = textColor }
+            }, RadarUiMoveName);
         }
 
         private static void AddUiToggle(CuiElementContainer elements, string label, string action, bool enabled, int row, int column, UserInterfaceSettings settings)
@@ -1801,8 +1908,13 @@ namespace Oxide.Plugins
         private static void DestroyRadarUi(BasePlayer player)
         {
             if (player == null) return;
-            CuiHelper.DestroyUi(player, RadarUiDragHandleName);
+            DestroyRadarMoveUi(player);
             CuiHelper.DestroyUi(player, RadarUiName);
+        }
+
+        private static void DestroyRadarMoveUi(BasePlayer player)
+        {
+            if (player != null) CuiHelper.DestroyUi(player, RadarUiMoveName);
         }
 
         private void SetTemporaryDuration(BasePlayer player, RadarPreferences preferences, RadarSession session, string[] args)
@@ -2172,6 +2284,7 @@ namespace Oxide.Plugins
             _sessions.TryGetValue(player.userID, out session);
             bool removed = _sessions.Remove(player.userID);
             if (session != null) session.UiVisible = false;
+            _uiMoveSessions.Remove(player.userID);
             DestroyRadarUi(player);
             if (removed) RefreshVoiceWatcherCount();
             if (removed)
@@ -2282,6 +2395,7 @@ namespace Oxide.Plugins
                 if (session.UiVisible && !HasPermission(viewer, PermUi))
                 {
                     session.UiVisible = false;
+                    _uiMoveSessions.Remove(viewer.userID);
                     DestroyRadarUi(viewer);
                 }
 
@@ -2334,6 +2448,7 @@ namespace Oxide.Plugins
                 if (!_sessions.TryGetValue(_sessionRemovalBuffer[i], out removedSession)) continue;
                 BasePlayer removedViewer = removedSession == null ? null : removedSession.Viewer;
                 if (removedSession != null) removedSession.UiVisible = false;
+                _uiMoveSessions.Remove(_sessionRemovalBuffer[i]);
                 DestroyRadarUi(removedViewer);
                 if (!_sessions.Remove(_sessionRemovalBuffer[i])) continue;
                 if (removedViewer != null)

@@ -6,6 +6,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [2.3.0] - 2026-08-07
+
+### Added
+
+- `/radar ui move` opens a compact positioning controller with Up, Down, Left, and Right controls.
+- Movement steps can be switched between 1%, 5%, and 10% of the screen for precise adjustment or faster travel.
+- The controller provides live preview plus Reset, Cancel, and Save actions and supplies its own cursor while open.
+
+### Changed
+
+- Replaced title dragging with deliberate button-based positioning to avoid accidental movement and make placement predictable across Rust clients.
+- Position changes remain temporary in memory until Save is selected. Cancel, UI closure, radar shutdown, permission loss, disconnect, and plugin reload discard unsaved movement.
+- Reset previews the server-configured position; saving that reset removes the personal override so future server-default changes continue to apply.
+- The investigation panel remains fully usable while the positioning controller is open.
+
 ## [2.2.0] - 2026-08-07
 
 ### Added
@@ -320,7 +335,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Dynamic voice-hook subscription and idle player-index suspension.
 - Configuration validation, localization, safe lifecycle cleanup, and corrupt-data recovery.
 
-[Unreleased]: https://github.com/SeesAll/SmartRecon/compare/2.2.0...HEAD
+[Unreleased]: https://github.com/SeesAll/SmartRecon/compare/2.3.0...HEAD
+[2.3.0]: https://github.com/SeesAll/SmartRecon/compare/2.2.0...2.3.0
 [2.2.0]: https://github.com/SeesAll/SmartRecon/compare/2.1.5...2.2.0
 [2.1.5]: https://github.com/SeesAll/SmartRecon/compare/2.1.4...2.1.5
 [2.1.4]: https://github.com/SeesAll/SmartRecon/compare/2.1.3...2.1.4
