@@ -6,6 +6,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [1.2.1] - 2026-08-06
+
+### Added
+
+- Configurable private vanish and reappear feedback sounds, with an opt-in option to make them audible to nearby players.
+
+### Fixed
+
+- Vanish reload recovery now rechecks noclip immediately, on the next tick, and after the unload/reload command race has settled. This prevents a persisted administrator from retaining the invisibility indicator while being left grounded without noclip.
+- Permanent vanish now requires a direct per-user permission grant. Administrator bypass, inherited group permissions, and wildcard-style staff grants can no longer accidentally lock an administrator in vanish.
+
+### Documentation
+
+- Clarified that Rust-authenticated moderators and owners bypass ordinary permissions by default, while regular players never do.
+
 ## [1.2.0] - 2026-08-06
 
 ### Added
@@ -100,7 +115,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Dynamic voice-hook subscription and idle player-index suspension.
 - Configuration validation, localization, safe lifecycle cleanup, and corrupt-data recovery.
 
-[Unreleased]: https://github.com/SeesAll/SmartRadar/compare/1.2.0...HEAD
+[Unreleased]: https://github.com/SeesAll/SmartRadar/compare/1.2.1...HEAD
+[1.2.1]: https://github.com/SeesAll/SmartRadar/compare/1.2.0...1.2.1
 [1.2.0]: https://github.com/SeesAll/SmartRadar/compare/1.1.1...1.2.0
 [1.1.1]: https://github.com/SeesAll/SmartRadar/compare/1.1.0...1.1.1
 [1.1.0]: https://github.com/SeesAll/SmartRadar/compare/1.0.0...1.1.0

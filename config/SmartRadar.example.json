@@ -85,6 +85,10 @@
     "Enable reload plus map-marker teleport with smartradar.vanish.teleport": false,
     "Show Rust's native invisibility indicator": true,
     "Show vanish chat notifications": true,
+    "Enable private vanish and reappear sounds": true,
+    "Make vanish and reappear sounds audible to nearby players": false,
+    "Sound effect used when vanishing": "assets/prefabs/npc/patrol helicopter/effects/rocket_fire.prefab",
+    "Sound effect used when reappearing": "assets/prefabs/npc/patrol helicopter/effects/rocket_fire.prefab",
     "Log vanish and reappear events": false
   },
   "Investigative vanish and radar workflow": {

@@ -19,7 +19,7 @@ using UnityEngine;
 
 namespace Oxide.Plugins
 {
-    [Info("SmartRadar", "SeesAll", "1.2.0")]
+    [Info("SmartRadar", "SeesAll", "1.2.1")]
     [Description("Unified administrative vanish and high-performance radar for Rust")]
     public class SmartRadar : RustPlugin
     {
@@ -95,6 +95,7 @@ namespace Oxide.Plugins
         private float _nextVoicePrune;
         private int _staggerSequence;
         private int _voiceWatcherCount;
+        private int _vanishFeedbackEffectDepth;
         private bool _vanishHooksSubscribed;
         private bool _networkGroupCompatibilityResolved;
         private bool _networkGroupCompatibilityWarningShown;
@@ -351,6 +352,18 @@ namespace Oxide.Plugins
 
             [JsonProperty("Show vanish chat notifications")]
             public bool EnableNotifications = true;
+
+            [JsonProperty("Enable private vanish and reappear sounds")]
+            public bool EnableSoundEffects = true;
+
+            [JsonProperty("Make vanish and reappear sounds audible to nearby players")]
+            public bool PublicSoundEffects = false;
+
+            [JsonProperty("Sound effect used when vanishing")]
+            public string VanishSoundEffect = "assets/prefabs/npc/patrol helicopter/effects/rocket_fire.prefab";
+
+            [JsonProperty("Sound effect used when reappearing")]
+            public string ReappearSoundEffect = "assets/prefabs/npc/patrol helicopter/effects/rocket_fire.prefab";
 
             [JsonProperty("Log vanish and reappear events")]
             public bool LogUsage = false;
@@ -2626,10 +2639,12 @@ namespace Oxide.Plugins
             if (player.GetComponent<SmartVanishController>() == null)
                 player.gameObject.AddComponent<SmartVanishController>();
 
-            if (_config.Vanish.EnableNoclip && !player.IsFlying && !player.isMounted)
+            if (_config.Vanish.EnableNoclip && !player.isMounted)
             {
                 state.EnabledNoclip = true;
-                player.SendConsoleCommand("noclip");
+                EnsureVanishNoclip(player);
+                NextTick(delegate { EnsureVanishNoclip(player); });
+                timer.Once(0.25f, delegate { EnsureVanishNoclip(player); });
             }
 
             if (_config.Vanish.ShowNativeIndicator)
@@ -2645,6 +2660,7 @@ namespace Oxide.Plugins
             if (_vanishedPlayers.Count == 1) SubscribeVanishHooks();
             bool radarStarted = StartInvestigationRadar(player);
             Interface.CallHook("OnSmartInvestigationStarted", player, radarStarted);
+            PlayVanishFeedbackSound(player, true);
 
             if (_config.Vanish.LogUsage)
                 Puts(player.displayName + " (" + player.UserIDString + ") entered SmartRadar vanish.");
@@ -2703,10 +2719,45 @@ namespace Oxide.Plugins
 
             if (_config.Investigation.StopRadarOnReappear) StopRadar(player, false);
             Interface.CallHook("OnSmartInvestigationEnded", player);
+            PlayVanishFeedbackSound(player, false);
             if (_config.Vanish.LogUsage)
                 Puts(player.displayName + " (" + player.UserIDString + ") left SmartRadar vanish.");
             if (notify && _config.Vanish.EnableNotifications) Reply(player, "VanishDisabled");
             return true;
+        }
+
+        private void EnsureVanishNoclip(BasePlayer player)
+        {
+            if (player == null || !player.IsConnected || !IsBuiltInVanished(player) ||
+                !_config.Vanish.EnableNoclip || player.isMounted || player.IsFlying) return;
+            VanishRuntimeState state;
+            if (_vanishRuntime.TryGetValue(player.userID, out state) && state != null)
+                state.EnabledNoclip = true;
+            player.SendConsoleCommand("noclip");
+        }
+
+        private void PlayVanishFeedbackSound(BasePlayer player, bool vanishing)
+        {
+            if (!_config.Vanish.EnableSoundEffects || player == null || player.net == null) return;
+            string effectPath = vanishing ? _config.Vanish.VanishSoundEffect : _config.Vanish.ReappearSoundEffect;
+            if (string.IsNullOrWhiteSpace(effectPath)) return;
+
+            if (_config.Vanish.PublicSoundEffects)
+            {
+                Effect.server.Run(effectPath, player.transform.position);
+                return;
+            }
+
+            if (player.net.connection == null) return;
+            try
+            {
+                _vanishFeedbackEffectDepth++;
+                EffectNetwork.Send(new Effect(effectPath, player, 0, Vector3.zero, Vector3.forward), player.net.connection);
+            }
+            finally
+            {
+                _vanishFeedbackEffectDepth--;
+            }
         }
 
         private VanishRuntimeState CaptureVanishRuntime(BasePlayer player)
@@ -3129,7 +3180,14 @@ namespace Oxide.Plugins
 
         private bool HasExplicitPermission(BasePlayer player, string permissionName)
         {
-            return player != null && permission.UserHasPermission(player.UserIDString, permissionName);
+            if (player == null) return false;
+            string[] directPermissions = permission.GetUserPermissions(player.UserIDString);
+            if (directPermissions == null) return false;
+            for (int i = 0; i < directPermissions.Length; i++)
+            {
+                if (string.Equals(directPermissions[i], permissionName, StringComparison.OrdinalIgnoreCase)) return true;
+            }
+            return false;
         }
 
         private bool HasPermission(BasePlayer player, string permissionName)
@@ -3465,7 +3523,7 @@ namespace Oxide.Plugins
             [HarmonyPrefix]
             private static bool Prefix([HarmonyArgument(0)] Effect effect)
             {
-                return effect == null || effect.source == 0 || Instance == null ||
+                return effect == null || effect.source == 0 || Instance == null || Instance._vanishFeedbackEffectDepth > 0 ||
                     !Instance._vanishedPlayers.Contains(effect.source);
             }
         }

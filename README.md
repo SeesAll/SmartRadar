@@ -2,7 +2,7 @@
 
 SmartRadar is a unified administrative vanish and high-performance radar plugin for Rust servers. It is designed for investigative work and runs as one self-contained plugin on Oxide or Carbon.
 
-Version: **1.2.0**
+Version: **1.2.1**
 
 ## Highlights
 
@@ -48,7 +48,7 @@ SmartRadar replaces the need to run separate radar and vanish plugins for this w
 
 Remove or unload other plugins that register `/radar`, `/vanish`, or `/inv` before testing SmartRadar. Two plugins should not control the same player's limited-networking vanish state at the same time.
 
-Rust moderators and owners bypass normal SmartRadar permissions by default. This can be disabled in the configuration.
+Rust moderators and owners bypass normal SmartRadar permissions by default through `Rust moderators and owners bypass SmartRadar permissions: true`. Regular players never receive this bypass. Set the option to `false` if every staff member should require individually assigned permissions.
 
 ## Quick start
 
@@ -90,7 +90,7 @@ Vanish and radar can still be controlled independently when needed. Automatic li
 | `/vanish help` | Displays the built-in vanish command summary. | `smartradar.vanish` |
 | `/inv <name\|SteamID>` | Opens an active or sleeping player's main, wear, and belt inventory for inspection. With no argument, it checks the nearby player being looked at. | `smartradar.vanish.inventory` |
 
-`true` and `1` are accepted in place of `on`; `false` and `0` are accepted in place of `off`.
+`true` and `1` are accepted in place of `on`; `false` and `0` are accepted in place of `off`. Vanishing and reappearing play a private feedback sound for the administrator by default. The sound paths and optional nearby-player audibility are configurable.
 
 ## Radar modes
 
@@ -172,7 +172,7 @@ Radar feature permissions do not grant radar command access on their own; a user
 | `smartradar.seevanished` | Permission to enable and display vanished-player targets. This is a privacy-sensitive permission with stricter administrator-bypass rules. |
 | `smartradar.seeowners` | Permission for a moderator to display owner-level targets when owner hiding is enabled. This is a privacy-sensitive permission with stricter administrator-bypass rules. |
 | `smartradar.vanish` | Permission to use `/vanish` and become invisible. This does not grant radar or investigative interaction features by itself. |
-| `smartradar.vanish.permanent` | Forces a permitted user to remain vanished and restores vanish on connection. This permission is always explicit and is never inherited through administrator bypass. |
+| `smartradar.vanish.permanent` | Forces a permitted user to remain vanished and restores vanish on connection. This lockout-sensitive permission must be granted directly to the user; administrator bypass and group/wildcard grants do not activate it. |
 | `smartradar.vanish.unlock` | Allows a vanished investigator to bypass locks, toggle targeted doors, and mount targeted vehicles using reload-key interaction. |
 | `smartradar.vanish.damage` | Allows a vanished investigator to deal damage when outgoing vanished damage is otherwise blocked. |
 | `smartradar.vanish.inventory` | Allows `/inv`, `/invspy`, and reload-key inspection of player or storage-container inventories. |
@@ -245,6 +245,7 @@ Important defaults:
 - Static-entity minimum refresh: `2s`
 - Vision arrows: disabled
 - Vision arrows while vanish starts radar: forced on
+- Private vanish and reappear feedback sounds: enabled
 - Investigation panel: enabled and shown when radar starts
 - NPC, loot, extended-info, and TC-link layers: disabled until requested
 - Voice indicators: disabled
@@ -267,7 +268,7 @@ When preference persistence is enabled, SmartRadar stores each administrator's l
 
 SmartRadar is implemented as an Oxide-compatible `RustPlugin` and does not depend on Carbon-only APIs. Its self-contained Harmony patches use the patching support supplied by the server framework to isolate vanished-player sounds and effects. The same source is intended for Oxide and Carbon.
 
-Version 1.2.0 was compile-checked against local Rust/Oxide assemblies. Its vanish movement updater supports both known Rust `UpdateGroups` signatures. Final runtime validation should be performed on a current test server before production deployment.
+Version 1.2.1 was compile-checked against local Rust/Oxide assemblies. Its vanish movement updater supports both known Rust `UpdateGroups` signatures. Final runtime validation should be performed on a current test server before production deployment.
 
 ## Changelog
 
