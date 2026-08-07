@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [2.0.3] - 2026-08-07
+
+### Fixed
+
+- Radar sessions now follow Rust's current public spectating target while an administrator uses native spectating.
+- Player, NPC, loot, stash, and tool-cupboard distance queries are centered on the watched player instead of the administrator's inactive spectator body.
+- Vanish-only map-marker teleport remains disabled throughout native spectating.
+
 ## [2.0.2] - 2026-08-07
 
 ### Fixed
@@ -208,7 +216,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Dynamic voice-hook subscription and idle player-index suspension.
 - Configuration validation, localization, safe lifecycle cleanup, and corrupt-data recovery.
 
-[Unreleased]: https://github.com/SeesAll/SmartRecon/compare/2.0.2...HEAD
+[Unreleased]: https://github.com/SeesAll/SmartRecon/compare/2.0.3...HEAD
+[2.0.3]: https://github.com/SeesAll/SmartRecon/compare/2.0.2...2.0.3
 [2.0.2]: https://github.com/SeesAll/SmartRecon/compare/2.0.1...2.0.2
 [2.0.1]: https://github.com/SeesAll/SmartRecon/compare/2.0.0...2.0.1
 [2.0.0]: https://github.com/SeesAll/SmartRecon/compare/1.3.1...2.0.0

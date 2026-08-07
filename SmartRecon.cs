@@ -21,7 +21,7 @@ using UnityEngine;
 
 namespace Oxide.Plugins
 {
-    [Info("SmartRecon", "SeesAll", "2.0.2")]
+    [Info("SmartRecon", "SeesAll", "2.0.3")]
     [Description("Unified administrative reconnaissance, vanish, radar, inspection, and rapid movement for Rust")]
     public class SmartRecon : RustPlugin
     {
@@ -3768,22 +3768,11 @@ namespace Oxide.Plugins
             return target != null && target.IsConnected ? target.transform.position : viewer.transform.position;
         }
 
-        private static readonly PropertyInfo SpectatingTargetProperty = typeof(BasePlayer).GetProperty("spectatingTarget", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
-        private static readonly FieldInfo SpectatingTargetField = typeof(BasePlayer).GetField("spectatingTarget", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
-
         private static BasePlayer GetSpectatingTarget(BasePlayer viewer)
         {
-            if (viewer == null) return null;
-            try
-            {
-                if (SpectatingTargetProperty != null) return SpectatingTargetProperty.GetValue(viewer, null) as BasePlayer;
-                if (SpectatingTargetField != null) return SpectatingTargetField.GetValue(viewer) as BasePlayer;
-            }
-            catch
-            {
-                // Rust has changed the spectating target member between releases. Falling back to the viewer is safe.
-            }
-            return null;
+            if (viewer == null || !viewer.IsSpectating()) return null;
+            BasePlayer target = viewer.SpectatingTarget;
+            return target != null && target.IsConnected ? target : null;
         }
 
         private static string EscapeRichText(string value)
