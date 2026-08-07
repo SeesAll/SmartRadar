@@ -19,7 +19,7 @@ using UnityEngine;
 
 namespace Oxide.Plugins
 {
-    [Info("SmartRecon", "SeesAll", "2.0.6")]
+    [Info("SmartRecon", "SeesAll", "2.1.0")]
     [Description("Unified administrative reconnaissance, vanish, radar, inspection, and rapid movement for Rust")]
     public class SmartRecon : RustPlugin
     {
@@ -83,6 +83,7 @@ namespace Oxide.Plugins
         private readonly List<StaticCandidate<BuildingPrivlidge>> _cupboardCandidates = new List<StaticCandidate<BuildingPrivlidge>>(256);
         private readonly List<StaticCandidate<BaseEntity>> _lootCandidates = new List<StaticCandidate<BaseEntity>>(256);
         private readonly List<StaticCandidate<BaseEntity>> _npcEntityCandidates = new List<StaticCandidate<BaseEntity>>(128);
+        private readonly List<ulong> _sessionIterationBuffer = new List<ulong>();
         private readonly List<ulong> _sessionRemovalBuffer = new List<ulong>();
         private readonly List<int> _npcRemovalBuffer = new List<int>();
         private readonly StringBuilder _labelBuilder = new StringBuilder(256);
@@ -99,6 +100,7 @@ namespace Oxide.Plugins
         private float _nextVoicePrune;
         private float _nextSpectateReconcile;
         private int _staggerSequence;
+        private int _schedulerCursor;
         private int _voiceWatcherCount;
         private int _vanishFeedbackEffectDepth;
         private bool _vanishHooksSubscribed;
@@ -812,6 +814,7 @@ namespace Oxide.Plugins
             for (int i = 0; i < hidden.Count; i++) ExitVanish(hidden[i], false, true, true);
 
             _sessions.Clear();
+            _sessionIterationBuffer.Clear();
             _voiceActivity.Clear();
             _teamColorCache.Clear();
             _vanishStateCache.Clear();
@@ -861,6 +864,7 @@ namespace Oxide.Plugins
             _voiceActivity.Remove(player.userID);
             _vanishStateCache.Remove(player.userID);
             _mapTeleportCooldowns.Remove(player.userID);
+            _forensicCooldowns.Remove(player.userID);
             if (_dataDirty) SaveData();
         }
 
@@ -1131,12 +1135,16 @@ namespace Oxide.Plugins
                         Reply(player, "FeaturePermission", "ui");
                         return;
                     }
-                    preferences.ShowUi = !(preferences.ShowUi ?? true);
+                    preferences.ShowUi = session != null ? !session.UiVisible : !(preferences.ShowUi ?? true);
                     MarkPreferencesChanged(session);
                     if (session != null)
                     {
                         if (preferences.ShowUi == true) ShowRadarUi(player, session);
-                        else DestroyRadarUi(player);
+                        else
+                        {
+                            session.UiVisible = false;
+                            DestroyRadarUi(player);
+                        }
                     }
                     Reply(player, "SettingChanged", "ui", preferences.ShowUi == true ? "on" : "off");
                     return;
@@ -1365,6 +1373,7 @@ namespace Oxide.Plugins
             if (action == "close")
             {
                 session.Preferences.ShowUi = false;
+                session.UiVisible = false;
                 MarkPreferencesChanged(session);
                 DestroyRadarUi(player);
                 return;
@@ -1383,10 +1392,12 @@ namespace Oxide.Plugins
                 case "npcs":
                     if (!HasPermission(player, PermNpcs)) return;
                     preferences.NpcsLayer = !LayerNpcs(preferences);
+                    preferences.Mode = ModeCustom;
                     break;
                 case "loot":
                     if (!HasPermission(player, PermLoot)) return;
                     preferences.LootLayer = !LayerLoot(preferences);
+                    preferences.Mode = ModeCustom;
                     break;
                 case "stashes":
                     if (!HasPermission(player, PermStashes)) return;
@@ -1434,16 +1445,19 @@ namespace Oxide.Plugins
         private void ShowRadarUi(BasePlayer player, RadarSession session)
         {
             DestroyRadarUi(player);
+            if (session != null) session.UiVisible = false;
             if (player == null || session == null || !_config.UserInterface.Enabled || session.Preferences.ShowUi != true ||
                 !HasPermission(player, PermUi)) return;
 
             UserInterfaceSettings settings = _config.UserInterface;
+            bool spectating = player.IsSpectating();
+            string workflowStatus = spectating ? "SPECTATE ON" : IsBuiltInVanished(player) ? "VANISH ON" : "VANISH OFF";
             CuiElementContainer elements = new CuiElementContainer();
             elements.Add(new CuiPanel
             {
                 Image = { Color = settings.PanelColor },
                 RectTransform = { AnchorMin = settings.AnchorMin, AnchorMax = settings.AnchorMax },
-                CursorEnabled = false
+                CursorEnabled = spectating
             }, "Hud", RadarUiName);
 
             elements.Add(new CuiLabel
@@ -1453,7 +1467,7 @@ namespace Oxide.Plugins
             }, RadarUiName);
             elements.Add(new CuiLabel
             {
-                Text = { Text = (IsBuiltInVanished(player) ? "VANISH ON" : "VANISH OFF") + "  •  RADAR ON", FontSize = 10, Align = TextAnchor.MiddleLeft, Color = settings.AccentColor },
+                Text = { Text = workflowStatus + "  •  RADAR ON", FontSize = 10, Align = TextAnchor.MiddleLeft, Color = settings.AccentColor },
                 RectTransform = { AnchorMin = "0.06 0.83", AnchorMax = "0.92 0.90" }
             }, RadarUiName);
             elements.Add(new CuiButton
@@ -1476,10 +1490,11 @@ namespace Oxide.Plugins
 
             elements.Add(new CuiLabel
             {
-                Text = { Text = "Open inventory to click • /radar ui hides panel", FontSize = 9, Align = TextAnchor.MiddleCenter, Color = "0.62 0.68 0.72 1" },
+                Text = { Text = spectating ? "Click controls • × closes • /radar ui reopens" : "Open inventory to click • /radar ui hides panel", FontSize = 9, Align = TextAnchor.MiddleCenter, Color = "0.62 0.68 0.72 1" },
                 RectTransform = { AnchorMin = "0.04 0.015", AnchorMax = "0.96 0.095" }
             }, RadarUiName);
             CuiHelper.AddUi(player, elements);
+            session.UiVisible = true;
         }
 
         private static void AddUiToggle(CuiElementContainer elements, string label, string action, bool enabled, int row, int column, UserInterfaceSettings settings)
@@ -1801,6 +1816,7 @@ namespace Oxide.Plugins
             public bool StartedBySpectate;
             public bool ForcedPlayersLayer;
             public bool ForcedArrows;
+            public bool UiVisible;
         }
 
         private void StartRadar(BasePlayer player, RadarPreferences preferences)
@@ -1865,7 +1881,10 @@ namespace Oxide.Plugins
         private void StopRadar(BasePlayer player, bool notify)
         {
             if (player == null) return;
+            RadarSession session;
+            _sessions.TryGetValue(player.userID, out session);
             bool removed = _sessions.Remove(player.userID);
+            if (session != null) session.UiVisible = false;
             DestroyRadarUi(player);
             if (removed) RefreshVoiceWatcherCount();
             if (removed)
@@ -1948,19 +1967,29 @@ namespace Oxide.Plugins
             int updatedSessions = 0;
             _sessionRemovalBuffer.Clear();
 
-            foreach (KeyValuePair<ulong, RadarSession> pair in _sessions)
+            _sessionIterationBuffer.Clear();
+            foreach (ulong userId in _sessions.Keys)
+                _sessionIterationBuffer.Add(userId);
+
+            int sessionCount = _sessionIterationBuffer.Count;
+            int startIndex = sessionCount == 0 ? 0 : _schedulerCursor % sessionCount;
+            int nextStartIndex = sessionCount == 0 ? 0 : (startIndex + 1) % sessionCount;
+            for (int visited = 0; visited < sessionCount; visited++)
             {
-                RadarSession session = pair.Value;
+                int iterationIndex = (startIndex + visited) % sessionCount;
+                ulong userId = _sessionIterationBuffer[iterationIndex];
+                RadarSession session;
+                if (!_sessions.TryGetValue(userId, out session)) continue;
                 BasePlayer viewer = session == null ? null : session.Viewer;
                 if (session != null && session.ExpiresAt > 0f && now >= session.ExpiresAt)
                 {
                     if (viewer != null && viewer.IsConnected) Reply(viewer, "Expired");
-                    _sessionRemovalBuffer.Add(pair.Key);
+                    _sessionRemovalBuffer.Add(userId);
                     continue;
                 }
                 if (viewer == null || !viewer.IsConnected || !HasPermission(viewer, PermUse))
                 {
-                    _sessionRemovalBuffer.Add(pair.Key);
+                    _sessionRemovalBuffer.Add(userId);
                     continue;
                 }
 
@@ -1968,7 +1997,7 @@ namespace Oxide.Plugins
                 if (!CanUsePreferences(viewer, session.Preferences, out deniedFeature))
                 {
                     Reply(viewer, "FeaturePermission", deniedFeature);
-                    _sessionRemovalBuffer.Add(pair.Key);
+                    _sessionRemovalBuffer.Add(userId);
                     continue;
                 }
 
@@ -2001,14 +2030,26 @@ namespace Oxide.Plugins
                 }
 
                 updatedSessions++;
+                nextStartIndex = (iterationIndex + 1) % sessionCount;
             }
+
+            if (sessionCount > 0)
+                _schedulerCursor = nextStartIndex;
 
             for (int i = 0; i < _sessionRemovalBuffer.Count; i++)
             {
                 RadarSession removedSession;
-                if (_sessions.TryGetValue(_sessionRemovalBuffer[i], out removedSession) && removedSession != null)
-                    DestroyRadarUi(removedSession.Viewer);
-                _sessions.Remove(_sessionRemovalBuffer[i]);
+                if (!_sessions.TryGetValue(_sessionRemovalBuffer[i], out removedSession)) continue;
+                BasePlayer removedViewer = removedSession == null ? null : removedSession.Viewer;
+                if (removedSession != null) removedSession.UiVisible = false;
+                DestroyRadarUi(removedViewer);
+                if (!_sessions.Remove(_sessionRemovalBuffer[i])) continue;
+                if (removedViewer != null)
+                {
+                    Interface.CallHook("OnSmartReconDeactivated", removedViewer);
+                    if (_config.General.LogUsage)
+                        Puts(removedViewer.displayName + " (" + removedViewer.UserIDString + ") disabled SmartRecon.");
+                }
             }
 
             if (_sessionRemovalBuffer.Count > 0) RefreshVoiceWatcherCount();
@@ -2033,7 +2074,8 @@ namespace Oxide.Plugins
         {
             foreach (RadarSession session in _sessions.Values)
             {
-                if (session != null && LayerPlayers(session.Preferences) && session.Preferences.ShowSleepers) return true;
+                if (session != null && (LayerPlayers(session.Preferences) || session.ForcedPlayersLayer) &&
+                    session.Preferences.ShowSleepers) return true;
             }
             return false;
         }
@@ -2459,35 +2501,51 @@ namespace Oxide.Plugins
             Vector3 origin, float radiusSqr, bool sleeping, bool forcedPlayersLayer, ulong ignoredTargetId,
             ulong watchedTargetId, int minX, int maxX, int minZ, int maxZ)
         {
+            if (index.Count == 0) return;
+            long cellCount = (long)(maxX - minX + 1) * (maxZ - minZ + 1);
+            if (cellCount > index.Count)
+            {
+                foreach (List<BasePlayer> players in index.Values)
+                    CollectPlayerCandidatesFromList(players, viewer, preferences, origin, radiusSqr, sleeping,
+                        forcedPlayersLayer, ignoredTargetId, watchedTargetId);
+                return;
+            }
+
             for (int x = minX; x <= maxX; x++)
             {
                 for (int z = minZ; z <= maxZ; z++)
                 {
                     List<BasePlayer> players;
                     if (!index.TryGetValue(MakeCellKey(x, z), out players)) continue;
-                    for (int i = 0; i < players.Count; i++)
-                    {
-                        BasePlayer target = players[i];
-                        if (!ShouldIncludePlayer(viewer, target, preferences, sleeping, forcedPlayersLayer,
-                                ignoredTargetId, watchedTargetId)) continue;
-                        float sqrDistance = (target.transform.position - origin).sqrMagnitude;
-                        if (sqrDistance > radiusSqr) continue;
-
-                        bool vanished = IsPlayerVanished(target);
-                        if (vanished && _config.Privacy.HideVanishedPlayers)
-                        {
-                            if (!preferences.ShowVanished || !HasPermission(viewer, PermSeeVanished)) continue;
-                        }
-
-                        _playerCandidates.Add(new PlayerCandidate
-                        {
-                            Player = target,
-                            SqrDistance = sqrDistance,
-                            Sleeping = sleeping,
-                            Vanished = vanished
-                        });
-                    }
+                    CollectPlayerCandidatesFromList(players, viewer, preferences, origin, radiusSqr, sleeping,
+                        forcedPlayersLayer, ignoredTargetId, watchedTargetId);
                 }
+            }
+        }
+
+        private void CollectPlayerCandidatesFromList(List<BasePlayer> players, BasePlayer viewer,
+            RadarPreferences preferences, Vector3 origin, float radiusSqr, bool sleeping, bool forcedPlayersLayer,
+            ulong ignoredTargetId, ulong watchedTargetId)
+        {
+            for (int i = 0; i < players.Count; i++)
+            {
+                BasePlayer target = players[i];
+                if (!ShouldIncludePlayer(viewer, target, preferences, sleeping, forcedPlayersLayer,
+                        ignoredTargetId, watchedTargetId)) continue;
+                float sqrDistance = (target.transform.position - origin).sqrMagnitude;
+                if (sqrDistance > radiusSqr) continue;
+
+                bool vanished = IsPlayerVanished(target);
+                if (vanished && _config.Privacy.HideVanishedPlayers &&
+                    (!preferences.ShowVanished || !HasPermission(viewer, PermSeeVanished))) continue;
+
+                _playerCandidates.Add(new PlayerCandidate
+                {
+                    Player = target,
+                    SqrDistance = sqrDistance,
+                    Sleeping = sleeping,
+                    Vanished = vanished
+                });
             }
         }
 
@@ -2751,9 +2809,18 @@ namespace Oxide.Plugins
 
         private void CollectStaticCandidates<T>(Dictionary<long, List<T>> index, List<StaticCandidate<T>> results, Vector3 origin, float radius) where T : BaseEntity
         {
+            if (index.Count == 0) return;
             float radiusSqr = radius * radius;
             int minX, maxX, minZ, maxZ;
             GetCellBounds(origin, radius, out minX, out maxX, out minZ, out maxZ);
+
+            long cellCount = (long)(maxX - minX + 1) * (maxZ - minZ + 1);
+            if (cellCount > index.Count)
+            {
+                foreach (List<T> entities in index.Values)
+                    CollectStaticCandidatesFromList(entities, results, origin, radiusSqr);
+                return;
+            }
 
             for (int x = minX; x <= maxX; x++)
             {
@@ -2761,15 +2828,21 @@ namespace Oxide.Plugins
                 {
                     List<T> entities;
                     if (!index.TryGetValue(MakeCellKey(x, z), out entities)) continue;
-                    for (int i = 0; i < entities.Count; i++)
-                    {
-                        T entity = entities[i];
-                        if (entity == null || entity.IsDestroyed) continue;
-                        float sqrDistance = (entity.transform.position - origin).sqrMagnitude;
-                        if (sqrDistance > radiusSqr) continue;
-                        results.Add(new StaticCandidate<T> { Entity = entity, SqrDistance = sqrDistance });
-                    }
+                    CollectStaticCandidatesFromList(entities, results, origin, radiusSqr);
                 }
+            }
+        }
+
+        private static void CollectStaticCandidatesFromList<T>(List<T> entities,
+            List<StaticCandidate<T>> results, Vector3 origin, float radiusSqr) where T : BaseEntity
+        {
+            for (int i = 0; i < entities.Count; i++)
+            {
+                T entity = entities[i];
+                if (entity == null || entity.IsDestroyed) continue;
+                float sqrDistance = (entity.transform.position - origin).sqrMagnitude;
+                if (sqrDistance > radiusSqr) continue;
+                results.Add(new StaticCandidate<T> { Entity = entity, SqrDistance = sqrDistance });
             }
         }
 
@@ -2828,14 +2901,20 @@ namespace Oxide.Plugins
             player.DisablePlayerCollider();
 
             List<Connection> connections = Pool.Get<List<Connection>>();
-            foreach (Connection connection in Net.sv.connections)
+            try
             {
-                if (connection != null && connection.connected && connection.isAuthenticated &&
-                    connection.player is BasePlayer && connection.player != player)
-                    connections.Add(connection);
+                foreach (Connection connection in Net.sv.connections)
+                {
+                    if (connection != null && connection.connected && connection.isAuthenticated &&
+                        connection.player is BasePlayer && connection.player != player)
+                        connections.Add(connection);
+                }
+                player.OnNetworkSubscribersLeave(connections);
             }
-            player.OnNetworkSubscribersLeave(connections);
-            Pool.FreeUnmanaged(ref connections);
+            finally
+            {
+                Pool.FreeUnmanaged(ref connections);
+            }
 
             if (ServerOcclusion.OcclusionEnabled) player.OcclusionMakeSubscribersForget();
             if (player.GetComponent<SmartReconVanishController>() == null)
@@ -3094,7 +3173,6 @@ namespace Oxide.Plugins
             session.NextPlayerUpdate = 0f;
             session.NextStaticUpdate = 0f;
             if (session.ForcedPlayersLayer) _nextPlayerIndexRebuild = 0f;
-            if (_config.UserInterface.ShowOnRadarStart) ShowRadarUi(player, session);
         }
 
         private void ReconcileSpectateSessions(float now)
@@ -3112,7 +3190,11 @@ namespace Oxide.Plugins
                 RadarSession session;
                 if (_sessions.TryGetValue(player.userID, out session) && session != null)
                 {
-                    if (!session.StartedBySpectate) ApplySpectateSessionDefaults(player, session);
+                    if (!session.StartedBySpectate)
+                    {
+                        ApplySpectateSessionDefaults(player, session);
+                        if (_config.UserInterface.ShowOnRadarStart) ShowRadarUi(player, session);
+                    }
                     continue;
                 }
 
@@ -3139,6 +3221,8 @@ namespace Oxide.Plugins
                     session.StartedBySpectate = false;
                     session.ForcedPlayersLayer = false;
                     session.ForcedArrows = false;
+                    if (session.Viewer != null && session.Preferences.ShowUi == true)
+                        ShowRadarUi(session.Viewer, session);
                 }
             }
             _sessionRemovalBuffer.Clear();
@@ -3247,6 +3331,7 @@ namespace Oxide.Plugins
             session.StartedBySpectate = false;
             session.ForcedPlayersLayer = false;
             session.ForcedArrows = false;
+            if (session.Preferences.ShowUi == true) ShowRadarUi(player, session);
         }
 
         private object OnPlayerViolation(BasePlayer player, AntiHackType type, float amount)
@@ -3432,6 +3517,7 @@ namespace Oxide.Plugins
         {
             private BasePlayer _player;
             private Vector3 _originalScale;
+            private float _nextMetabolismUpdate;
             private float _nextNetworkGroupUpdate;
 
             private void Awake()
@@ -3440,17 +3526,23 @@ namespace Oxide.Plugins
                 if (_player == null) return;
                 _originalScale = _player.transform.localScale;
                 _player.transform.localScale = Vector3.zero;
+                _nextMetabolismUpdate = 0f;
                 _nextNetworkGroupUpdate = 0f;
             }
 
             private void FixedUpdate()
             {
                 if (_player == null || Instance == null) return;
-                Instance.MaintainVanishMetabolism(_player);
-                if (Time.realtimeSinceStartup >= _nextNetworkGroupUpdate)
+                float now = Time.realtimeSinceStartup;
+                if (now >= _nextMetabolismUpdate)
+                {
+                    Instance.MaintainVanishMetabolism(_player);
+                    _nextMetabolismUpdate = now + 0.25f;
+                }
+                if (now >= _nextNetworkGroupUpdate)
                 {
                     Instance.UpdateVanishNetworkGroup(_player);
-                    _nextNetworkGroupUpdate = Time.realtimeSinceStartup + 2f;
+                    _nextNetworkGroupUpdate = now + 2f;
                 }
                 if (_player.serverInput != null && _player.serverInput.IsDown(BUTTON.RELOAD) &&
                     !_player.serverInput.WasDown(BUTTON.RELOAD))
@@ -3495,7 +3587,7 @@ namespace Oxide.Plugins
             if (player == null || !_sessions.TryGetValue(player.userID, out session) || session == null) return false;
             switch ((layer ?? string.Empty).ToLowerInvariant())
             {
-                case "players": return LayerPlayers(session.Preferences);
+                case "players": return LayerPlayers(session.Preferences) || session.ForcedPlayersLayer;
                 case "npcs": return LayerNpcs(session.Preferences);
                 case "loot": return LayerLoot(session.Preferences);
                 case "stashes": return LayerStashes(session.Preferences);
@@ -3772,16 +3864,6 @@ namespace Oxide.Plugins
                 case "out": return "outside";
                 default: return null;
             }
-        }
-
-        private static bool ModeIncludesPlayers(string mode)
-        {
-            return mode == ModePlayers || mode == ModeAll;
-        }
-
-        private static bool ModeIncludesStatic(string mode)
-        {
-            return mode == ModeStashes || mode == ModeCupboards || mode == ModeAll;
         }
 
         #endregion

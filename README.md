@@ -2,7 +2,7 @@
 
 SmartRecon is a unified Rust administration and investigation suite combining high-performance radar, secure vanish, player inspection, forensic tools, and vanish-only map teleportation. It runs as one self-contained plugin on Oxide or Carbon.
 
-Version: **2.0.6**
+Version: **2.1.0**
 
 ## Highlights
 
@@ -20,6 +20,7 @@ Version: **2.0.6**
 - Provides true built-in network invisibility, noclip, metabolism protection, anti-hack bypass, damage protection, silent effects, and optional investigative interaction.
 - Automatically starts radar with vision arrows when an administrator vanishes and stops radar when they reappear.
 - Automatically starts radar with vision arrows during native Rust spectating and follows the watched player.
+- Makes the investigation panel directly clickable during native spectating without requiring the inventory cursor.
 - Teleports permitted vanished administrators to right-click map markers, then automatically removes the temporary marker.
 - Hides vanished players and server owners from unauthorized radar users by default.
 - Does not modify player authorization flags.
@@ -77,7 +78,7 @@ With the default configuration:
 1. An authorized administrator runs `/vanish`.
 2. SmartRecon makes the administrator invisible, enables noclip and protections, and starts the administrator's saved radar profile.
 3. Player vision arrows are forced on for that temporary radar session without changing the saved arrows preference.
-4. A compact right-side panel exposes Players, NPCs, Loot, Stashes, Tool Cupboards, Sleepers, Vision/Arrows, Extended Info, TC Links, and Voice toggles. Open the normal inventory screen to obtain a cursor and click it.
+4. A compact right-side panel exposes Players, NPCs, Loot, Stashes, Tool Cupboards, Sleepers, Vision/Arrows, Extended Info, TC Links, and Voice toggles. Open the normal inventory screen to obtain a cursor while vanished; during native spectating, SmartRecon supplies the cursor automatically.
 5. With `smartrecon.vanish.teleport`, placing a map marker instantly teleports the vanished administrator to that location and removes the temporary marker.
 6. The administrator investigates using radar filters and, when permitted, inventory or reload-key interaction.
 7. Running `/vanish` again makes the administrator visible, stops radar, and removes the panel automatically.
@@ -118,7 +119,7 @@ All radar commands require `smartrecon.use`. Commands that display or enable a p
 | `/radar off` | Stops the user's active radar session. | None |
 | `/radar status` | Reports whether radar is active and displays its mode, distance, refresh rate, toggles, filters, and remaining temporary duration. | None |
 | `/radar help` | Displays the built-in command summary. | None |
-| `/radar ui` | Shows or hides the investigation panel. The panel can be clicked while the normal inventory cursor is open. | `smartrecon.ui` |
+| `/radar ui` | Shows or hides the investigation panel. Use the normal inventory cursor outside spectating; SmartRecon makes the panel directly clickable during native spectating. | `smartrecon.ui` |
 | `/radar reset` | Restores the user's saved preferences to configured defaults. If the default mode is not permitted, the first permitted mode is selected instead. | At least one mode permission |
 | `/radar <players\|stashes\|tcs\|all> [distance] [rate]` | Selects a mode, optionally changes distance and refresh rate, and starts radar immediately. | Permission for every feature in the selected mode |
 | `/radar mode <players\|stashes\|tcs\|all>` | Changes the saved mode and the active session's mode, if running. It does not start radar by itself. | Permission for every feature in the selected mode |
@@ -207,7 +208,7 @@ For Carbon, use the equivalent Carbon permission commands or permission interfac
 
 SmartRecon's vanish is self-contained. It uses Rust's limited-networking state, removes the administrator from ordinary network subscribers and server entity queries, tells AI memory to ignore the administrator, disables the collider, and keeps network groups updated while the administrator moves. It can enable noclip, pause metabolism, bypass anti-hack violations, block incoming and outgoing damage, and suppress entity signals and effects that could reveal the investigator.
 
-While vanished, pressing the reload key while looking at a permitted target can inspect a player or container, toggle a door, or mount a vehicle. Inventory inspection and lock bypass are independently permission-controlled. With `smartrecon.vanish.teleport`, placing a map marker teleports the vanished administrator immediately; no reload-key modifier is required. Visible-player markers retain normal Rust behavior. Entering native Rust spectating cleanly leaves SmartRecon vanish so Rust's spectator networking can take control, then starts radar with vision arrows and centers all distance queries on the watched player. Marker teleporting remains explicitly disabled throughout spectating.
+While vanished, pressing the reload key while looking at a permitted target can inspect a player or container, toggle a door, or mount a vehicle. Inventory inspection and lock bypass are independently permission-controlled. With `smartrecon.vanish.teleport`, placing a map marker teleports the vanished administrator immediately; no reload-key modifier is required. Visible-player markers retain normal Rust behavior. Entering native Rust spectating cleanly leaves SmartRecon vanish so Rust's spectator networking can take control, then starts radar with vision arrows and centers all distance queries on the watched player. The panel owns a cursor while spectating, so every permitted layer—including Players, NPCs, Loot, Stashes, Tool Cupboards, and Vision/Arrows—can be changed immediately. Closing the panel releases the cursor; `/radar ui` reopens it. Marker teleporting remains explicitly disabled throughout spectating.
 
 Successful marker teleports are written to SmartRecon's separate `teleports` audit log by default. Each entry records UTC time, administrator name and Steam ID, starting coordinates, and destination coordinates. This can be disabled in configuration without affecting teleport behavior.
 
@@ -226,7 +227,10 @@ SmartRecon is designed to avoid the most expensive behavior found in simple ESP 
 - Results are sorted by squared distance, and only the nearest configured number are drawn.
 - A per-session draw-command budget prevents a large result set from creating an unlimited burst.
 - Session deadlines are staggered, and only a configured number of sessions can update per scheduler tick.
+- Session processing rotates fairly between administrators when more sessions are due than the per-tick limit permits.
+- Spatial queries automatically choose between nearby-cell lookup and occupied-cell traversal, avoiding large runs of empty dictionary lookups at extended ranges.
 - The CUI panel is rebuilt only when its state changes; it does not refresh every scheduler cycle.
+- Vanish metabolism protection is maintained at a bounded four updates per second instead of every physics frame.
 - Forensic searches are permission-gated, limited to 250 drawings, protected by a cooldown, and yield every 200 inspected entities.
 - Voice hooks are subscribed only while at least one active session requests voice indicators.
 - Vanish damage, lock, anti-hack, collider, and marker hooks are subscribed only while someone is vanished and only when their feature is configured.

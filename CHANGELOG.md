@@ -6,6 +6,30 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [2.1.0] - 2026-08-07
+
+### Added
+
+- Native spectating now gives the SmartRecon panel its own cursor, allowing every permitted UI toggle to be used without an inventory cursor.
+- Spectating UI status and instructions now reflect the spectator workflow; closing the panel releases the cursor and `/radar ui` reopens it.
+
+### Fixed
+
+- NPC and Loot UI changes now switch the saved profile to `custom`, matching every other independent layer control.
+- `/radar ui` now toggles the panel's actual runtime visibility, including when automatic panel display is disabled.
+- Sleeper indexing now remains active when the Players layer is temporarily forced for a spectating session.
+- `IsRadarLayerEnabled` now reports the effective forced Players layer during spectating.
+- Panels retained after spectating ends are rebuilt without spectator cursor ownership.
+- Scheduler-driven session expiration or permission cleanup now emits the normal radar-deactivation hook.
+- Pooled network-subscriber lists are now returned safely even if Rust throws while a player enters vanish.
+
+### Performance
+
+- Added fair rotating session scheduling so administrators cannot be starved when more radar sessions are due than the configured per-tick limit.
+- Added adaptive spatial traversal that scans occupied cells instead of large empty coordinate ranges when that is cheaper.
+- Reduced vanished-player metabolism maintenance from every physics frame to a bounded four times per second while retaining protection.
+- Removed disconnected-user forensic cooldown entries and unused mode helper methods.
+
 ## [2.0.6] - 2026-08-07
 
 ### Changed
@@ -241,7 +265,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Dynamic voice-hook subscription and idle player-index suspension.
 - Configuration validation, localization, safe lifecycle cleanup, and corrupt-data recovery.
 
-[Unreleased]: https://github.com/SeesAll/SmartRecon/compare/2.0.6...HEAD
+[Unreleased]: https://github.com/SeesAll/SmartRecon/compare/2.1.0...HEAD
+[2.1.0]: https://github.com/SeesAll/SmartRecon/compare/2.0.6...2.1.0
 [2.0.6]: https://github.com/SeesAll/SmartRecon/compare/2.0.5...2.0.6
 [2.0.5]: https://github.com/SeesAll/SmartRecon/compare/2.0.4...2.0.5
 [2.0.4]: https://github.com/SeesAll/SmartRecon/compare/2.0.3...2.0.4
