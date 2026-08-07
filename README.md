@@ -18,6 +18,14 @@ Version: **1.0.0**
 - Hides vanished players and server owners from moderators by default.
 - Does not modify player authorization flags or require Harmony patches.
 
+## Why choose SmartRadar?
+
+SmartRadar is intended for server owners who want capable administrative visibility without giving every staff member unrestricted access or letting each radar session repeatedly scan the entire server. Its shared spatial indexes, staggered scheduler, result limits, and drawing budget are designed to keep workload predictable as player and entity counts grow.
+
+Compared with a basic radar, SmartRadar combines player, sleeper, stash, and tool-cupboard tracking in one workflow while adding saved preferences, temporary sessions, useful filters, granular feature permissions, extended-range control, and privacy-aware handling of vanished players and owner-level administrators. It also avoids changing administrator flags and requires neither Carbon-only APIs nor Harmony patches, so the same plugin can be used on Oxide or Carbon.
+
+SmartRadar is not a replacement for a vanishing plugin: Vanish hides administrators, while SmartRadar helps authorized staff observe the server. When Vanish is installed, SmartRadar integrates with it so invisible staff are not exposed to radar users who lack the appropriate access. The two plugins can therefore be used together without making Vanish a required dependency.
+
 ## Requirements
 
 - A current Rust dedicated server.
