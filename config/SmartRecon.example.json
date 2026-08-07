@@ -105,7 +105,10 @@
     "Automatically stop radar when leaving vanish": true,
     "Use the administrator's saved radar mode and filters": true,
     "Radar mode when saved preferences are not used": "players",
-    "Force player vision arrows on while vanish started radar": true
+    "Force player vision arrows on while vanish started radar": true,
+    "Automatically start radar when entering native spectating": true,
+    "Automatically stop spectate-started radar when native spectating ends": true,
+    "Force player vision arrows on during native spectating": true
   },
   "Investigation user interface": {
     "Enabled": true,

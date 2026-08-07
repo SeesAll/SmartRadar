@@ -21,7 +21,7 @@ using UnityEngine;
 
 namespace Oxide.Plugins
 {
-    [Info("SmartRecon", "SeesAll", "2.0.3")]
+    [Info("SmartRecon", "SeesAll", "2.0.4")]
     [Description("Unified administrative reconnaissance, vanish, radar, inspection, and rapid movement for Rust")]
     public class SmartRecon : RustPlugin
     {
@@ -417,6 +417,15 @@ namespace Oxide.Plugins
 
             [JsonProperty("Force player vision arrows on while vanish started radar")]
             public bool ForceVisionArrows = true;
+
+            [JsonProperty("Automatically start radar when entering native spectating")]
+            public bool StartRadarOnSpectate = true;
+
+            [JsonProperty("Automatically stop spectate-started radar when native spectating ends")]
+            public bool StopRadarOnSpectateEnd = true;
+
+            [JsonProperty("Force player vision arrows on during native spectating")]
+            public bool ForceVisionArrowsOnSpectate = true;
         }
 
         private sealed class UserInterfaceSettings
@@ -847,6 +856,8 @@ namespace Oxide.Plugins
                 AddCovalenceCommand(_config.Vanish.InventoryCommandAliases, nameof(CommandInventory));
             Unsubscribe(nameof(OnPlayerVoice));
             UnsubscribeVanishHooks();
+            Subscribe(nameof(OnPlayerSpectate));
+            Subscribe(nameof(OnPlayerSpectateEnd));
         }
 
         private void OnServerInitialized()
@@ -1463,7 +1474,9 @@ namespace Oxide.Plugins
             {
                 case "players":
                     if (!HasPermission(player, PermPlayers)) return;
-                    preferences.PlayersLayer = !LayerPlayers(preferences);
+                    bool playersEnabled = LayerPlayers(preferences) || session.ForcedPlayersLayer;
+                    session.ForcedPlayersLayer = false;
+                    preferences.PlayersLayer = !playersEnabled;
                     preferences.Mode = ModeCustom;
                     break;
                 case "npcs":
@@ -1555,7 +1568,7 @@ namespace Oxide.Plugins
                 Text = { Text = "×", FontSize = 17, Align = TextAnchor.MiddleCenter, Color = settings.TextColor }
             }, RadarUiName);
 
-            AddUiToggle(elements, "PLAYERS", "players", LayerPlayers(session.Preferences), 0, 0, settings);
+            AddUiToggle(elements, "PLAYERS", "players", LayerPlayers(session.Preferences) || session.ForcedPlayersLayer, 0, 0, settings);
             AddUiToggle(elements, "NPCS", "npcs", LayerNpcs(session.Preferences), 0, 1, settings);
             AddUiToggle(elements, "LOOT", "loot", LayerLoot(session.Preferences), 1, 0, settings);
             AddUiToggle(elements, "STASHES", "stashes", LayerStashes(session.Preferences), 1, 1, settings);
@@ -1890,6 +1903,8 @@ namespace Oxide.Plugins
             public float NextStaticUpdate;
             public float ExpiresAt;
             public bool StartedByVanish;
+            public bool StartedBySpectate;
+            public bool ForcedPlayersLayer;
             public bool ForcedArrows;
         }
 
@@ -1932,8 +1947,18 @@ namespace Oxide.Plugins
             session.NextStaticUpdate = Time.realtimeSinceStartup + stagger;
             session.ExpiresAt = 0f;
             session.StartedByVanish = false;
+            session.StartedBySpectate = false;
+            session.ForcedPlayersLayer = false;
             session.ForcedArrows = false;
+            if (player.IsSpectating())
+            {
+                session.StartedBySpectate = true;
+                session.ForcedArrows = _config.Investigation.ForceVisionArrowsOnSpectate &&
+                    HasPermission(player, PermArrows) && HasPermission(player, PermPlayers);
+                session.ForcedPlayersLayer = session.ForcedArrows && !LayerPlayers(preferences);
+            }
             if (HasPlayerLayers(preferences)) _nextPlayerIndexRebuild = 0f;
+            if (session.ForcedPlayersLayer) _nextPlayerIndexRebuild = 0f;
             if (preferences.ShowSleepers) _nextSleeperIndexRebuild = 0f;
             RefreshVoiceWatcherCount();
             if (_config.UserInterface.ShowOnRadarStart) ShowRadarUi(player, session);
@@ -1988,16 +2013,16 @@ namespace Oxide.Plugins
                 preferences.SafeZoneFilter,
                 string.IsNullOrEmpty(preferences.NameFilter) ? "off" : preferences.NameFilter,
                 session.ExpiresAt > 0f ? Mathf.Max(0f, session.ExpiresAt - Time.realtimeSinceStartup).ToString("0.#", CultureInfo.InvariantCulture) + "s" : "off",
-                BuildLayerStatus(preferences),
+                BuildLayerStatus(preferences, session.ForcedPlayersLayer),
                 preferences.ShowExtended ? "on" : "off",
                 preferences.ShowTcLinks ? "on" : "off",
                 preferences.ShowUi == true ? "on" : "off");
         }
 
-        private static string BuildLayerStatus(RadarPreferences preferences)
+        private static string BuildLayerStatus(RadarPreferences preferences, bool forcedPlayersLayer)
         {
             List<string> enabled = new List<string>(5);
-            if (LayerPlayers(preferences)) enabled.Add("players");
+            if (LayerPlayers(preferences) || forcedPlayersLayer) enabled.Add("players");
             if (LayerNpcs(preferences)) enabled.Add("npcs");
             if (LayerLoot(preferences)) enabled.Add("loot");
             if (LayerStashes(preferences)) enabled.Add("stashes");
@@ -2067,7 +2092,8 @@ namespace Oxide.Plugins
                     _dataDirty = true;
                 }
 
-                bool playerDue = HasPlayerLayers(session.Preferences) && now >= session.NextPlayerUpdate;
+                bool playerDue = (HasPlayerLayers(session.Preferences) || session.ForcedPlayersLayer) &&
+                    now >= session.NextPlayerUpdate;
                 bool staticDue = HasStaticLayers(session.Preferences) && now >= session.NextStaticUpdate;
                 if (!playerDue && !staticDue) continue;
                 if (updatedSessions >= _config.Scheduler.MaximumSessionsPerTick) continue;
@@ -2109,7 +2135,7 @@ namespace Oxide.Plugins
         {
             foreach (RadarSession session in _sessions.Values)
             {
-                if (session != null && HasPlayerLayers(session.Preferences)) return true;
+                if (session != null && (HasPlayerLayers(session.Preferences) || session.ForcedPlayersLayer)) return true;
             }
             return false;
         }
@@ -2408,7 +2434,7 @@ namespace Oxide.Plugins
         {
             BasePlayer viewer = session.Viewer;
             RadarPreferences preferences = session.Preferences;
-            if (!HasPlayerLayers(preferences)) return 0;
+            if (!HasPlayerLayers(preferences) && !session.ForcedPlayersLayer) return 0;
 
             _playerCandidates.Clear();
             BasePlayer spectatingTarget = GetSpectatingTarget(viewer);
@@ -2421,7 +2447,8 @@ namespace Oxide.Plugins
             GetCellBounds(origin, preferences.Distance, out minX, out maxX, out minZ, out maxZ);
 
             CollectPlayerCandidates(_activePlayerIndex, viewer, preferences, origin, radiusSqr, false, ignoredTargetId, minX, maxX, minZ, maxZ);
-            if (LayerPlayers(preferences) && preferences.ShowSleepers && HasPermission(viewer, PermSleepers))
+            if ((LayerPlayers(preferences) || session.ForcedPlayersLayer) && preferences.ShowSleepers &&
+                HasPermission(viewer, PermSleepers))
                 CollectPlayerCandidates(_sleepingPlayerIndex, viewer, preferences, origin, radiusSqr, true, ignoredTargetId, minX, maxX, minZ, maxZ);
 
             _playerCandidates.Sort(ComparePlayerCandidates);
@@ -2926,7 +2953,8 @@ namespace Oxide.Plugins
             return true;
         }
 
-        private bool ExitVanish(BasePlayer player, bool notify, bool preservePersistedState, bool force)
+        private bool ExitVanish(BasePlayer player, bool notify, bool preservePersistedState, bool force,
+            bool keepRadar = false, bool playFeedback = true)
         {
             if (player == null) return false;
             bool managed = IsBuiltInVanished(player);
@@ -2972,9 +3000,9 @@ namespace Oxide.Plugins
             }
             if (_vanishedPlayers.Count == 0) UnsubscribeVanishHooks();
 
-            if (_config.Investigation.StopRadarOnReappear) StopRadar(player, false);
+            if (!keepRadar && _config.Investigation.StopRadarOnReappear) StopRadar(player, false);
             Interface.CallHook("OnSmartInvestigationEnded", player);
-            PlayVanishFeedbackSound(player, false);
+            if (playFeedback) PlayVanishFeedbackSound(player, false);
             if (_config.Vanish.LogUsage)
                 Puts(player.displayName + " (" + player.UserIDString + ") left SmartRecon vanish.");
             if (notify && _config.Vanish.EnableNotifications) Reply(player, "VanishDisabled");
@@ -3120,7 +3148,27 @@ namespace Oxide.Plugins
 
         private bool StartInvestigationRadar(BasePlayer player)
         {
-            if (!_config.Investigation.StartRadarOnVanish || !HasPermission(player, PermUse)) return false;
+            RadarSession session;
+            if (!TryStartAutomaticRadar(player, _config.Investigation.StartRadarOnVanish,
+                    _config.Investigation.ForceVisionArrows, out session)) return false;
+            session.StartedByVanish = true;
+            return true;
+        }
+
+        private bool StartSpectateRadar(BasePlayer player)
+        {
+            RadarSession session;
+            if (!TryStartAutomaticRadar(player, _config.Investigation.StartRadarOnSpectate,
+                    _config.Investigation.ForceVisionArrowsOnSpectate, out session)) return false;
+            session.StartedBySpectate = true;
+            return true;
+        }
+
+        private bool TryStartAutomaticRadar(BasePlayer player, bool enabled, bool forceVisionArrows,
+            out RadarSession session)
+        {
+            session = null;
+            if (!enabled || player == null || !player.IsConnected || !HasPermission(player, PermUse)) return false;
 
             RadarPreferences preferences = _config.Investigation.UseSavedRadarPreferences
                 ? GetPreferences(player.userID)
@@ -3142,13 +3190,15 @@ namespace Oxide.Plugins
                 preferences.LootLayer = false;
             }
 
-            bool forceArrows = _config.Investigation.ForceVisionArrows && HasPermission(player, PermArrows);
+            bool canForceVision = forceVisionArrows && HasPermission(player, PermArrows) &&
+                HasPermission(player, PermPlayers);
+
             StartRadar(player, preferences, false);
-            RadarSession session;
             if (_sessions.TryGetValue(player.userID, out session))
             {
-                session.StartedByVanish = true;
-                session.ForcedArrows = forceArrows;
+                session.ForcedArrows = canForceVision;
+                session.ForcedPlayersLayer = canForceVision && !LayerPlayers(preferences);
+                if (session.ForcedPlayersLayer) _nextPlayerIndexRebuild = 0f;
                 if (_config.UserInterface.ShowOnRadarStart) ShowRadarUi(player, session);
             }
             return session != null;
@@ -3163,8 +3213,6 @@ namespace Oxide.Plugins
         {
             if (_vanishHooksSubscribed) return;
             Subscribe(nameof(OnPlayerColliderEnable));
-            Subscribe(nameof(OnPlayerSpectate));
-            Subscribe(nameof(OnPlayerSpectateEnd));
             if (_config.Vanish.PreventIncomingDamage || _config.Vanish.PreventOutgoingDamage)
                 Subscribe(nameof(OnEntityTakeDamage));
             if (_config.Vanish.EnableLockBypass) Subscribe(nameof(CanUseLockedEntity));
@@ -3176,8 +3224,6 @@ namespace Oxide.Plugins
         private void UnsubscribeVanishHooks()
         {
             Unsubscribe(nameof(OnPlayerColliderEnable));
-            Unsubscribe(nameof(OnPlayerSpectate));
-            Unsubscribe(nameof(OnPlayerSpectateEnd));
             Unsubscribe(nameof(OnEntityTakeDamage));
             Unsubscribe(nameof(CanUseLockedEntity));
             Unsubscribe(nameof(OnPlayerViolation));
@@ -3192,17 +3238,35 @@ namespace Oxide.Plugins
 
         private void OnPlayerSpectate(BasePlayer player, string spectateFilter)
         {
-            if (IsBuiltInVanished(player)) DetachVanishRuntime(player);
+            if (player == null) return;
+
+            // Rust's spectator subscriber and SmartRecon limited networking must never overlap.
+            if (IsBuiltInVanished(player))
+                ExitVanish(player, false, false, true, true, false);
+
+            NextTick(delegate
+            {
+                if (player == null || !player.IsConnected || !player.IsSpectating()) return;
+                StartSpectateRadar(player);
+            });
         }
 
         private void OnPlayerSpectateEnd(BasePlayer player, string spectateFilter)
         {
-            if (!IsBuiltInVanished(player)) return;
-            NextTick(delegate
+            if (player == null) return;
+            RadarSession session;
+            if (!_sessions.TryGetValue(player.userID, out session) || session == null || !session.StartedBySpectate)
+                return;
+
+            if (_config.Investigation.StopRadarOnSpectateEnd)
             {
-                if (player != null && player.IsConnected && player.GetComponent<SmartReconVanishController>() == null)
-                    player.gameObject.AddComponent<SmartReconVanishController>();
-            });
+                StopRadar(player, false);
+                return;
+            }
+
+            session.StartedBySpectate = false;
+            session.ForcedPlayersLayer = false;
+            session.ForcedArrows = false;
         }
 
         private object OnPlayerViolation(BasePlayer player, AntiHackType type, float amount)

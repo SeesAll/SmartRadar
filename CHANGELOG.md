@@ -6,6 +6,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [2.0.4] - 2026-08-07
+
+### Added
+
+- Native Rust spectating now starts radar automatically by default and forces player vision arrows on for the spectating session.
+- Independent configuration controls for automatic spectate radar, forced spectate vision arrows, and stopping the automatically started session when spectating ends.
+- Automatic investigation sessions can temporarily force the player layer when required for vision arrows without overwriting the administrator's saved profile.
+
+### Fixed
+
+- Entering native spectating now cleanly exits SmartRecon's limited-networking vanish state before Rust installs its spectator networking state.
+- Prevented the conflicting networking modes that could leave radar apparently enabled but unable to draw while spectating.
+- Spectate lifecycle hooks now remain available independently of whether any administrator is currently vanished.
+- Manually running `/radar on` during native spectating now applies the same forced player-layer and vision-arrow defaults as automatic activation.
+
 ## [2.0.3] - 2026-08-07
 
 ### Fixed
@@ -216,7 +231,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Dynamic voice-hook subscription and idle player-index suspension.
 - Configuration validation, localization, safe lifecycle cleanup, and corrupt-data recovery.
 
-[Unreleased]: https://github.com/SeesAll/SmartRecon/compare/2.0.3...HEAD
+[Unreleased]: https://github.com/SeesAll/SmartRecon/compare/2.0.4...HEAD
+[2.0.4]: https://github.com/SeesAll/SmartRecon/compare/2.0.3...2.0.4
 [2.0.3]: https://github.com/SeesAll/SmartRecon/compare/2.0.2...2.0.3
 [2.0.2]: https://github.com/SeesAll/SmartRecon/compare/2.0.1...2.0.2
 [2.0.1]: https://github.com/SeesAll/SmartRecon/compare/2.0.0...2.0.1

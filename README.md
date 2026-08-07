@@ -2,7 +2,7 @@
 
 SmartRecon is a unified Rust administration and investigation suite combining high-performance radar, secure vanish, player inspection, forensic tools, and vanish-only map teleportation. It runs as one self-contained plugin on Oxide or Carbon.
 
-Version: **2.0.3**
+Version: **2.0.4**
 
 ## Highlights
 
@@ -19,6 +19,7 @@ Version: **2.0.3**
 - Supports temporary radar sessions that automatically expire.
 - Provides true built-in network invisibility, noclip, metabolism protection, anti-hack bypass, damage protection, silent effects, and optional investigative interaction.
 - Automatically starts radar with vision arrows when an administrator vanishes and stops radar when they reappear.
+- Automatically starts radar with vision arrows during native Rust spectating and follows the watched player.
 - Teleports permitted vanished administrators to right-click map markers, then automatically removes the temporary marker.
 - Hides vanished players and server owners from unauthorized radar users by default.
 - Does not modify player authorization flags.
@@ -222,7 +223,7 @@ For Carbon, use the equivalent Carbon permission commands or permission interfac
 
 SmartRecon's vanish is self-contained. It uses Rust's limited-networking state, removes the administrator from ordinary network subscribers and server entity queries, tells AI memory to ignore the administrator, disables the collider, and keeps network groups updated while the administrator moves. It can enable noclip, pause metabolism, bypass anti-hack violations, block incoming and outgoing damage, and suppress entity signals and effects that could reveal the investigator.
 
-While vanished, pressing the reload key while looking at a permitted target can inspect a player or container, toggle a door, or mount a vehicle. Inventory inspection and lock bypass are independently permission-controlled. With `smartrecon.vanish.teleport`, placing a map marker teleports the vanished administrator immediately; no reload-key modifier is required. Visible-player markers retain normal Rust behavior. During native Rust spectating, radar remains active and centers all distance queries on the watched player, while marker teleporting remains explicitly disabled.
+While vanished, pressing the reload key while looking at a permitted target can inspect a player or container, toggle a door, or mount a vehicle. Inventory inspection and lock bypass are independently permission-controlled. With `smartrecon.vanish.teleport`, placing a map marker teleports the vanished administrator immediately; no reload-key modifier is required. Visible-player markers retain normal Rust behavior. Entering native Rust spectating cleanly leaves SmartRecon vanish so Rust's spectator networking can take control, then starts radar with vision arrows and centers all distance queries on the watched player. Marker teleporting remains explicitly disabled throughout spectating.
 
 Successful marker teleports are written to SmartRecon's separate `teleports` audit log by default. Each entry records UTC time, administrator name and Steam ID, starting coordinates, and destination coordinates. This can be disabled in configuration without affecting teleport behavior.
 
@@ -261,6 +262,8 @@ Important defaults:
 - Static-entity minimum refresh: `2s`
 - Vision arrows: disabled
 - Vision arrows while vanish starts radar: forced on
+- Radar during native Rust spectating: starts automatically with vision arrows forced on
+- Spectate-started radar: stops automatically when native spectating ends
 - Private vanish and reappear feedback sounds: enabled
 - Vanish-only map-marker teleport: enabled for users with `smartrecon.vanish.teleport`
 - Used teleport markers: removed automatically
