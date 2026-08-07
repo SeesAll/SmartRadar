@@ -1,10 +1,18 @@
 # Changelog
 
-All notable changes to SmartRecon, formerly SmartRadar, are documented in this file.
+All notable changes to SmartRecon are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+
+## [2.0.6] - 2026-08-07
+
+### Changed
+
+- Removed the unused pre-release name-migration layer so SmartRecon now has one plugin identity, one data/config identity, and one `smartrecon.*` permission namespace.
+- Removed obsolete command aliases, UI console actions, lifecycle hooks, config/data imports, and numeric command syntax retained solely for pre-release compatibility.
+- Permission registration and authorization checks now operate exclusively on SmartRecon permissions, eliminating Oxide plugin-prefix warnings.
 
 ## [2.0.5] - 2026-08-07
 
@@ -52,30 +60,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Fixed
 
-- Corrected the configuration migration load order so Oxide initializes its configuration object before SmartRecon checks for and imports a legacy `SmartRadar.json` file.
-- Prevented the resulting `NullReferenceException` that stopped a freshly renamed SmartRecon installation from initializing.
+- Corrected the configuration load order so Oxide initializes its configuration object before SmartRecon reads it.
+- Prevented the resulting `NullReferenceException` that could stop SmartRecon from initializing.
 
 ## [2.0.0] - 2026-08-07
 
-### Renamed
+### Changed
 
-- SmartRadar is now SmartRecon to represent the complete investigation suite rather than only its radar component.
-- Plugin source, class, UI branding, configuration example, GitHub repository, release assets, documentation, and audit-log identity now use SmartRecon.
-- Primary permissions now use the `smartrecon.*` namespace.
+- Established SmartRecon as the identity for the complete investigation suite.
+- Plugin source, class, UI branding, configuration example, GitHub repository, release assets, documentation, and audit-log identity use SmartRecon.
+- Permissions use the `smartrecon.*` namespace.
 
 ### Added
 
-- Automatic import of legacy `SmartRadar.json` configuration and stored data when SmartRecon has not created replacements yet.
-- Backward-compatible recognition and registration of every existing `smartradar.*` permission.
-- `/recon` and `/smartrecon` command aliases while retaining `/radar`, `/sradar`, and legacy `/smartradar`.
-- `OnSmartReconActivated` and `OnSmartReconDeactivated` hooks. Legacy SmartRadar hook names continue to be emitted for integrations during migration.
-- Legacy `smartradar.ui` console actions remain accepted by older cached UI elements.
-
-### Migration
-
-- Existing saved radar profiles, UI preferences, filters, and persisted vanish state are copied into SmartRecon on first load.
-- Legacy configuration, data, permission grants, and log files are left untouched as recovery copies.
-- Servers must remove `SmartRadar.cs` when installing `SmartRecon.cs`; the two identities should not be loaded together.
+- `/recon` and `/smartrecon` command aliases alongside `/radar`.
+- `OnSmartReconActivated` and `OnSmartReconDeactivated` hooks for integrations.
 
 ## [1.3.1] - 2026-08-07
 
@@ -86,13 +85,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Changed
 
-- Native Rust admin spectating now explicitly disables map-marker teleport processing. SmartRadar leaves the note and spectating session untouched.
+- Native Rust admin spectating now explicitly disables map-marker teleport processing. SmartRecon leaves the note and spectating session untouched.
 
 ## [1.3.0] - 2026-08-07
 
 ### Added
 
-- Vanish-only map-marker teleport integrated directly into SmartRadar under the existing `smartradar.vanish.teleport` permission.
+- Vanish-only map-marker teleport integrated directly into SmartRecon under the `smartrecon.vanish.teleport` permission.
 - Collision-aware destination height selection covering terrain, structures, water, and large vehicles.
 - Configurable landing offset, optional preservation of a higher noclip altitude, automatic used-marker removal, and a small anti-double-fire interval.
 
@@ -104,7 +103,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Performance
 
-- The marker hook remains dynamically subscribed only while at least one SmartRadar-managed administrator is vanished.
+- The marker hook remains dynamically subscribed only while at least one SmartRecon-managed administrator is vanished.
 - Teleport processing performs one bounded raycast and constant-time state checks only when an eligible marker is placed.
 
 ## [1.2.3] - 2026-08-06
@@ -132,7 +131,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Performance
 
-- Animals are registered through spawn/kill hooks and only the bounded tracked-NPC collection is reindexed with moving targets; SmartRadar does not scan all server entities every player refresh.
+- Animals are registered through spawn/kill hooks and only the bounded tracked-NPC collection is reindexed with moving targets; SmartRecon does not scan all server entities every player refresh.
 
 ## [1.2.1] - 2026-08-06
 
@@ -165,7 +164,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ### Changed
 
 - Vanish-started radar now opens the investigation panel by default after forcing player vision arrows on.
-- Legacy mode presets now populate independent layers while panel or layer-command changes switch the profile to `custom`.
+- Mode presets now populate independent layers while panel or layer-command changes switch the profile to `custom`.
 - Radar status and help output now cover layers, UI, extended details, TC links, and forensic commands.
 
 ### Performance
@@ -203,19 +202,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Entering vanish now starts the configured investigative radar profile by default.
 - Vision arrows are forced on for vanish-started radar sessions without overwriting saved preferences.
 - Reappearing now stops the active radar session by default.
-- SmartRadar no longer requires a separate Vanish plugin for invisibility.
+- SmartRecon does not require a separate Vanish plugin for invisibility.
 - Configuration, data storage, permissions, commands, and documentation now cover both radar and vanish.
 
 ### Performance
 
 - Vanish protection hooks are dynamically subscribed only while at least one administrator is vanished.
 - Damage, lock, marker, and anti-hack hooks are individually gated by configuration.
-- Harmony prefixes exit immediately when no SmartRadar-managed administrator is vanished.
+- Harmony prefixes exit immediately when no SmartRecon-managed administrator is vanished.
 
 ### Security
 
 - Incoming damage is blocked for vanished investigators by default.
-- Outgoing damage is blocked unless the investigator has `smartradar.vanish.damage`.
+- Outgoing damage is blocked unless the investigator has `smartrecon.vanish.damage`.
 - Lock bypass, inventory inspection, map teleport, permanent vanish, and vanished-target visibility use separate permissions.
 
 ## [1.0.0] - 2026-08-06
@@ -236,14 +235,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Player-name, team, authorization, and safe-zone filters.
 - Persistent per-administrator preferences.
 - Temporary radar sessions with automatic expiry.
-- Legacy `/radar <rate> <distance> <mode>` command compatibility.
 - Granular feature and privacy permissions.
 - Optional Vanish API integration with a limited-networking fallback.
 - Default protection for vanished players and owner-level administrators.
 - Dynamic voice-hook subscription and idle player-index suspension.
 - Configuration validation, localization, safe lifecycle cleanup, and corrupt-data recovery.
 
-[Unreleased]: https://github.com/SeesAll/SmartRecon/compare/2.0.5...HEAD
+[Unreleased]: https://github.com/SeesAll/SmartRecon/compare/2.0.6...HEAD
+[2.0.6]: https://github.com/SeesAll/SmartRecon/compare/2.0.5...2.0.6
 [2.0.5]: https://github.com/SeesAll/SmartRecon/compare/2.0.4...2.0.5
 [2.0.4]: https://github.com/SeesAll/SmartRecon/compare/2.0.3...2.0.4
 [2.0.3]: https://github.com/SeesAll/SmartRecon/compare/2.0.2...2.0.3

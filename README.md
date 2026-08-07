@@ -2,7 +2,7 @@
 
 SmartRecon is a unified Rust administration and investigation suite combining high-performance radar, secure vanish, player inspection, forensic tools, and vanish-only map teleportation. It runs as one self-contained plugin on Oxide or Carbon.
 
-Version: **2.0.5**
+Version: **2.0.6**
 
 ## Highlights
 
@@ -54,16 +54,6 @@ Remove or unload other plugins that register `/radar`, `/vanish`, or `/inv` befo
 
 Rust moderators and owners bypass normal SmartRecon permissions by default through `Rust moderators and owners bypass SmartRecon permissions: true`. Regular players never receive this bypass. Set the option to `false` if every staff member should require individually assigned permissions.
 
-### Migrating from SmartRadar
-
-1. Remove `SmartRadar.cs` from the plugin directory. Do not run both plugin files together.
-2. Install `SmartRecon.cs`.
-3. If SmartRecon has no configuration or data yet, it automatically imports `SmartRadar.json` configuration, saved preferences, UI settings, and persisted vanish state.
-4. The original SmartRadar files are left untouched as a recovery copy.
-5. Existing `smartradar.*` permissions continue to work during the compatibility period. Use `smartrecon.*` for new grants.
-
-Existing SmartRadar audit logs are not renamed or deleted. New entries are written under the SmartRecon plugin identity.
-
 ## Quick start
 
 ```text
@@ -78,7 +68,7 @@ Existing SmartRadar audit logs are not renamed or deleted. New entries are writt
 /radar help
 ```
 
-The default radar aliases are `/radar`, `/recon`, `/smartrecon`, `/sradar`, and legacy `/smartradar`. The default vanish aliases are `/vanish` and `/v`; inventory inspection uses `/inv` and `/invspy`. Aliases can be changed in the configuration.
+The default radar aliases are `/radar`, `/recon`, and `/smartrecon`. The default vanish aliases are `/vanish` and `/v`; inventory inspection uses `/inv` and `/invspy`. Aliases can be changed in the configuration.
 
 ## Investigative workflow
 
@@ -156,12 +146,6 @@ For toggle commands, `true`, `1`, and `toggle` are accepted in addition to `on`;
 
 Filter aliases are also accepted: `team` for `mine`; `other` for `others`; `noteam` for `solo`; `player` for `players`; `admins` for `staff`; `moderator` or `mods` for `moderators`; `owner` for `owners`; and `in` or `out` for the corresponding safe-zone filters.
 
-Legacy Simple Radar syntax is also supported:
-
-```text
-/radar <rate> <distance> <mode>
-```
-
 All numeric input is validated. Negative, zero, NaN, infinite, out-of-range, or otherwise invalid values are rejected without replacing a working radar session.
 
 ## Permissions
@@ -170,7 +154,7 @@ Radar feature permissions do not grant radar command access on their own; a user
 
 | Permission | What it grants |
 | --- | --- |
-| `smartrecon.use` | Access to `/radar`, `/recon`, `/smartrecon`, and the retained legacy aliases. It does not grant access to any target category by itself. |
+| `smartrecon.use` | Access to `/radar`, `/recon`, and `/smartrecon`. It does not grant access to any target category by itself. |
 | `smartrecon.players` | Permission to select player radar and include players in `all` mode. |
 | `smartrecon.stashes` | Permission to select stash radar and include hidden or exposed stashes in `all` mode. |
 | `smartrecon.cupboards` | Permission to select tool-cupboard radar and include cupboards in `all` mode. The command name for this mode is `tcs`. |

@@ -3,9 +3,7 @@
     "Command aliases": [
       "radar",
       "recon",
-      "smartrecon",
-      "sradar",
-      "smartradar"
+      "smartrecon"
     ],
     "Rust moderators and owners bypass SmartRecon permissions": true,
     "Persist each administrator's last settings": true,

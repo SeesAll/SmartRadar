@@ -2,7 +2,6 @@ using Facepunch;
 using HarmonyLib;
 using Network;
 using Newtonsoft.Json;
-using Newtonsoft.Json.Linq;
 using Oxide.Core;
 using Oxide.Core.Configuration;
 using Oxide.Core.Libraries.Covalence;
@@ -14,14 +13,13 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Globalization;
-using System.IO;
 using System.Reflection;
 using System.Text;
 using UnityEngine;
 
 namespace Oxide.Plugins
 {
-    [Info("SmartRecon", "SeesAll", "2.0.5")]
+    [Info("SmartRecon", "SeesAll", "2.0.6")]
     [Description("Unified administrative reconnaissance, vanish, radar, inspection, and rapid movement for Rust")]
     public class SmartRecon : RustPlugin
     {
@@ -49,10 +47,6 @@ namespace Oxide.Plugins
         private const string PermTcInfo = "smartrecon.tcinfo";
         private const string PermUi = "smartrecon.ui";
         private const string PermForensics = "smartrecon.forensics";
-        private const string LegacyPermissionPrefix = "smartradar.";
-        private const string CurrentPermissionPrefix = "smartrecon.";
-        private const string LegacyPluginName = "SmartRadar";
-
         private const string ModePlayers = "players";
         private const string ModeStashes = "stashes";
         private const string ModeCupboards = "tcs";
@@ -156,7 +150,7 @@ namespace Oxide.Plugins
         private sealed class GeneralSettings
         {
             [JsonProperty("Command aliases", ObjectCreationHandling = ObjectCreationHandling.Replace)]
-            public string[] CommandAliases = { "radar", "recon", "smartrecon", "sradar", "smartradar" };
+            public string[] CommandAliases = { "radar", "recon", "smartrecon" };
 
             [JsonProperty("Rust moderators and owners bypass SmartRecon permissions")]
             public bool AdminsBypassPermissions = true;
@@ -466,18 +460,7 @@ namespace Oxide.Plugins
 
         protected override void LoadConfig()
         {
-            string currentPath = Path.Combine(Interface.Oxide.ConfigDirectory, Name + ".json");
-            bool shouldImportLegacyConfig = !File.Exists(currentPath);
-
             base.LoadConfig();
-
-            if (shouldImportLegacyConfig && TryLoadLegacyConfig())
-            {
-                ValidateConfig();
-                SaveConfig();
-                PrintWarning("Imported legacy SmartRadar configuration into SmartRecon. The original file was left untouched.");
-                return;
-            }
 
             try
             {
@@ -498,49 +481,6 @@ namespace Oxide.Plugins
             SaveConfig();
         }
 
-        private bool TryLoadLegacyConfig()
-        {
-            string legacyPath = Path.Combine(Interface.Oxide.ConfigDirectory, LegacyPluginName + ".json");
-            if (!File.Exists(legacyPath)) return false;
-            try
-            {
-                DynamicConfigFile legacyFile = new DynamicConfigFile(legacyPath);
-                JObject raw = legacyFile.ReadObject<JObject>();
-                if (raw == null) return false;
-                _config = raw.ToObject<PluginConfig>();
-                if (_config == null) return false;
-
-                JObject general = raw["General settings"] as JObject;
-                JObject privacy = raw["Vanish and owner privacy"] as JObject;
-                JObject vanish = raw["Built-in vanish"] as JObject;
-                if (general != null)
-                {
-                    JToken token = general["Rust moderators and owners bypass SmartRadar permissions"];
-                    if (token != null) _config.General.AdminsBypassPermissions = token.Value<bool>();
-                    token = general["Maximum distance with smartradar.extendedrange"];
-                    if (token != null) _config.General.MaximumExtendedDistance = token.Value<float>();
-                }
-                if (privacy != null)
-                {
-                    JToken token = privacy["Hide owners from moderators unless they have smartradar.seeowners"];
-                    if (token != null) _config.Privacy.HideOwnersFromModerators = token.Value<bool>();
-                }
-                if (vanish != null)
-                {
-                    JToken token = vanish["Allow lock bypass with smartradar.vanish.unlock"];
-                    if (token != null) _config.Vanish.EnableLockBypass = token.Value<bool>();
-                    token = vanish["Enable vanish-only map-marker teleport with smartradar.vanish.teleport"];
-                    if (token != null) _config.Vanish.EnableMapMarkerTeleport = token.Value<bool>();
-                }
-                return true;
-            }
-            catch (Exception exception)
-            {
-                PrintWarning("Legacy SmartRadar configuration could not be imported: " + exception.Message);
-                return false;
-            }
-        }
-
         protected override void SaveConfig()
         {
             Config.WriteObject(_config, true);
@@ -558,9 +498,7 @@ namespace Oxide.Plugins
             if (_config.UserInterface == null) _config.UserInterface = new UserInterfaceSettings();
 
             if (_config.General.CommandAliases == null || _config.General.CommandAliases.Length == 0)
-                _config.General.CommandAliases = new[] { "radar", "recon", "smartrecon", "sradar", "smartradar" };
-            else if (UsesLegacyDefaultRadarAliases(_config.General.CommandAliases))
-                _config.General.CommandAliases = new[] { "radar", "recon", "smartrecon", "sradar", "smartradar" };
+                _config.General.CommandAliases = new[] { "radar", "recon", "smartrecon" };
             if (_config.Vanish.CommandAliases == null || _config.Vanish.CommandAliases.Length == 0)
                 _config.Vanish.CommandAliases = new[] { "vanish", "v" };
             if (_config.Vanish.InventoryCommandAliases == null || _config.Vanish.InventoryCommandAliases.Length == 0)
@@ -607,14 +545,6 @@ namespace Oxide.Plugins
             _arrowDrawColor = ParseColor(_config.Display.ArrowDrawingColor, Color.white);
             _lootDrawColor = ParseColor(_config.Display.LootDrawingColor, new Color(0.95f, 0.79f, 0.3f));
             _npcDrawColor = ParseColor(_config.Display.NpcDrawingColor, new Color(1f, 0.7f, 0.28f));
-        }
-
-        private static bool UsesLegacyDefaultRadarAliases(string[] aliases)
-        {
-            if (aliases == null || aliases.Length != 3) return false;
-            return string.Equals(aliases[0], "radar", StringComparison.OrdinalIgnoreCase) &&
-                string.Equals(aliases[1], "sradar", StringComparison.OrdinalIgnoreCase) &&
-                string.Equals(aliases[2], "smartradar", StringComparison.OrdinalIgnoreCase);
         }
 
         private static Color ParseColor(string value, Color fallback)
@@ -664,31 +594,14 @@ namespace Oxide.Plugins
         private void LoadData()
         {
             _dataFile = Interface.Oxide.DataFileSystem.GetFile(Name);
-            DynamicConfigFile sourceFile = _dataFile;
-            bool importedLegacyData = false;
-            if (!File.Exists(_dataFile.Filename))
-            {
-                DynamicConfigFile legacyDataFile = Interface.Oxide.DataFileSystem.GetFile(LegacyPluginName);
-                if (File.Exists(legacyDataFile.Filename))
-                {
-                    sourceFile = legacyDataFile;
-                    importedLegacyData = true;
-                }
-            }
             try
             {
-                _storedData = sourceFile.ReadObject<StoredData>();
+                _storedData = _dataFile.ReadObject<StoredData>();
                 if (_storedData == null) _storedData = new StoredData();
                 if (_storedData.Preferences == null)
                     _storedData.Preferences = new Dictionary<ulong, RadarPreferences>();
                 if (_storedData.VanishedUsers == null)
                     _storedData.VanishedUsers = new HashSet<ulong>();
-                if (importedLegacyData)
-                {
-                    _dataDirty = true;
-                    SaveData();
-                    PrintWarning("Imported legacy SmartRadar preferences and vanish state into SmartRecon. The original data file was left untouched.");
-                }
             }
             catch (Exception exception)
             {
@@ -808,7 +721,7 @@ namespace Oxide.Plugins
                 ["SettingChanged"] = "SmartRecon {0} set to {1}.",
                 ["FilterChanged"] = "SmartRecon {0} filter set to {1}.",
                 ["SettingsReset"] = "SmartRecon settings reset to defaults.",
-                ["Help"] = "SmartRecon commands:\n/radar - toggle\n/radar <players|stashes|tcs|all> [distance] [rate]\n/radar on|off|status|reset|ui\n/radar mode <mode>\n/radar layer <players|npcs|loot|stashes|tcs> [on|off]\n/radar distance <meters>\n/radar rate <seconds>\n/radar for <seconds>\n/radar arrows|voice|sleepers|vanished|extended|tclinks [on|off]\n/radar filter name <text|off>\n/radar filter team <all|mine|others|solo>\n/radar filter auth <all|players|staff|moderators|owners>\n/radar filter safezone <all|inside|outside>\n/radar findid <steamid>\n/radar buildings <twig|unprivileged>\n/radar drops [distance]\nLegacy: /radar <rate> <distance> <mode>",
+                ["Help"] = "SmartRecon commands:\n/radar - toggle\n/radar <players|stashes|tcs|all> [distance] [rate]\n/radar on|off|status|reset|ui\n/radar mode <mode>\n/radar layer <players|npcs|loot|stashes|tcs> [on|off]\n/radar distance <meters>\n/radar rate <seconds>\n/radar for <seconds>\n/radar arrows|voice|sleepers|vanished|extended|tclinks [on|off]\n/radar filter name <text|off>\n/radar filter team <all|mine|others|solo>\n/radar filter auth <all|players|staff|moderators|owners>\n/radar filter safezone <all|inside|outside>\n/radar findid <steamid>\n/radar buildings <twig|unprivileged>\n/radar drops [distance]",
                 ["VanishedUnavailable"] = "Viewing vanished players is disabled or not permitted.",
                 ["ConsolePlayerOnly"] = "SmartRecon must be controlled by an in-game player.",
                 ["DurationSet"] = "SmartRecon will automatically disable in {0:0.#} seconds.",
@@ -1293,20 +1206,6 @@ namespace Oxide.Plugins
                 return;
             }
 
-            float legacyRate;
-            if (args.Length >= 2 && TryParsePositiveFloat(args[0], out legacyRate))
-            {
-                string legacyMode = args.Length >= 3 ? args[2] : ModePlayers;
-                RadarPreferences candidate = ClonePreferences(preferences);
-                if (!TrySetRate(player, candidate, args[0])) return;
-                if (!TrySetDistance(player, candidate, args[1])) return;
-                if (!TrySetMode(player, candidate, legacyMode)) return;
-                CopyPreferences(candidate, preferences);
-                MarkPreferencesChanged(session);
-                StartRadar(player, preferences);
-                return;
-            }
-
             Reply(player, "Help");
         }
 
@@ -1530,12 +1429,6 @@ namespace Oxide.Plugins
             MarkPreferencesChanged(session);
             if (HasPlayerLayers(preferences)) _nextPlayerIndexRebuild = 0f;
             ShowRadarUi(player, session);
-        }
-
-        [ConsoleCommand("smartradar.ui")]
-        private void CommandLegacyRadarUi(ConsoleSystem.Arg arg)
-        {
-            CommandRadarUi(arg);
         }
 
         private void ShowRadarUi(BasePlayer player, RadarSession session)
@@ -1966,7 +1859,6 @@ namespace Oxide.Plugins
             if (newlyStarted)
             {
                 Interface.CallHook("OnSmartReconActivated", player);
-                Interface.CallHook("OnSmartRadarActivated", player);
             }
         }
 
@@ -1979,7 +1871,6 @@ namespace Oxide.Plugins
             if (removed)
             {
                 Interface.CallHook("OnSmartReconDeactivated", player);
-                Interface.CallHook("OnSmartRadarDeactivated", player);
             }
             if (removed && _config.General.LogUsage)
                 Puts(player.displayName + " (" + player.UserIDString + ") disabled SmartRecon.");
@@ -3621,49 +3512,33 @@ namespace Oxide.Plugins
 
         private void RegisterPermissions()
         {
-            RegisterPermissionPair(PermUse);
-            RegisterPermissionPair(PermPlayers);
-            RegisterPermissionPair(PermStashes);
-            RegisterPermissionPair(PermCupboards);
-            RegisterPermissionPair(PermArrows);
-            RegisterPermissionPair(PermVoice);
-            RegisterPermissionPair(PermSleepers);
-            RegisterPermissionPair(PermExtendedRange);
-            RegisterPermissionPair(PermSeeVanished);
-            RegisterPermissionPair(PermSeeOwners);
-            RegisterPermissionPair(PermVanish);
-            RegisterPermissionPair(PermVanishPermanent);
-            RegisterPermissionPair(PermVanishUnlock);
-            RegisterPermissionPair(PermVanishDamage);
-            RegisterPermissionPair(PermVanishInventory);
-            RegisterPermissionPair(PermVanishTeleport);
-            RegisterPermissionPair(PermNpcs);
-            RegisterPermissionPair(PermLoot);
-            RegisterPermissionPair(PermExtended);
-            RegisterPermissionPair(PermTcInfo);
-            RegisterPermissionPair(PermUi);
-            RegisterPermissionPair(PermForensics);
-        }
-
-        private void RegisterPermissionPair(string permissionName)
-        {
-            permission.RegisterPermission(permissionName, this);
-            string legacyPermission = LegacyPermissionName(permissionName);
-            if (!string.Equals(legacyPermission, permissionName, StringComparison.OrdinalIgnoreCase))
-                permission.RegisterPermission(legacyPermission, this);
-        }
-
-        private static string LegacyPermissionName(string permissionName)
-        {
-            if (string.IsNullOrEmpty(permissionName) || !permissionName.StartsWith(CurrentPermissionPrefix, StringComparison.OrdinalIgnoreCase))
-                return permissionName;
-            return permissionName.Replace(CurrentPermissionPrefix, LegacyPermissionPrefix);
+            permission.RegisterPermission(PermUse, this);
+            permission.RegisterPermission(PermPlayers, this);
+            permission.RegisterPermission(PermStashes, this);
+            permission.RegisterPermission(PermCupboards, this);
+            permission.RegisterPermission(PermArrows, this);
+            permission.RegisterPermission(PermVoice, this);
+            permission.RegisterPermission(PermSleepers, this);
+            permission.RegisterPermission(PermExtendedRange, this);
+            permission.RegisterPermission(PermSeeVanished, this);
+            permission.RegisterPermission(PermSeeOwners, this);
+            permission.RegisterPermission(PermVanish, this);
+            permission.RegisterPermission(PermVanishPermanent, this);
+            permission.RegisterPermission(PermVanishUnlock, this);
+            permission.RegisterPermission(PermVanishDamage, this);
+            permission.RegisterPermission(PermVanishInventory, this);
+            permission.RegisterPermission(PermVanishTeleport, this);
+            permission.RegisterPermission(PermNpcs, this);
+            permission.RegisterPermission(PermLoot, this);
+            permission.RegisterPermission(PermExtended, this);
+            permission.RegisterPermission(PermTcInfo, this);
+            permission.RegisterPermission(PermUi, this);
+            permission.RegisterPermission(PermForensics, this);
         }
 
         private static bool PermissionMatches(string suppliedPermission, string currentPermission)
         {
-            return string.Equals(suppliedPermission, currentPermission, StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(suppliedPermission, LegacyPermissionName(currentPermission), StringComparison.OrdinalIgnoreCase);
+            return string.Equals(suppliedPermission, currentPermission, StringComparison.OrdinalIgnoreCase);
         }
 
         private bool HasExplicitPermission(BasePlayer player, string permissionName)
@@ -3673,8 +3548,7 @@ namespace Oxide.Plugins
             if (directPermissions == null) return false;
             for (int i = 0; i < directPermissions.Length; i++)
             {
-                if (string.Equals(directPermissions[i], permissionName, StringComparison.OrdinalIgnoreCase) ||
-                    string.Equals(directPermissions[i], LegacyPermissionName(permissionName), StringComparison.OrdinalIgnoreCase)) return true;
+                if (string.Equals(directPermissions[i], permissionName, StringComparison.OrdinalIgnoreCase)) return true;
             }
             return false;
         }
@@ -3682,8 +3556,7 @@ namespace Oxide.Plugins
         private bool HasPermission(BasePlayer player, string permissionName)
         {
             if (player == null) return false;
-            bool explicitPermission = permission.UserHasPermission(player.UserIDString, permissionName) ||
-                permission.UserHasPermission(player.UserIDString, LegacyPermissionName(permissionName));
+            bool explicitPermission = permission.UserHasPermission(player.UserIDString, permissionName);
             if (permissionName == PermSeeVanished || permissionName == PermSeeOwners)
                 return explicitPermission || (_config.General.AdminsBypassPermissions && GetAuthLevel(player) >= 2);
             if (_config.General.AdminsBypassPermissions && GetAuthLevel(player) > 0) return true;
