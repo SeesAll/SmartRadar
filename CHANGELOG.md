@@ -6,6 +6,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [1.2.2] - 2026-08-06
+
+### Fixed
+
+- The NPC layer now includes animals and other non-player NPC entities instead of recognizing only player-shaped `NPCPlayer` instances.
+- Humanoid NPC detection now recognizes non-Steam Rust NPC identities, improving coverage for scientists, dwellers, guards, scarecrows, and plugin-created NPC players.
+
+### Added
+
+- Moving spatial tracking and labels for older and newer Rust animal/NPC entity bases, farmable animals, wildlife hazards, sharks, horses, and travelling vendors.
+- A separate configurable NPC/animal result limit and drawing color.
+
+### Performance
+
+- Animals are registered through spawn/kill hooks and only the bounded tracked-NPC collection is reindexed with moving targets; SmartRadar does not scan all server entities every player refresh.
+
 ## [1.2.1] - 2026-08-06
 
 ### Added
@@ -115,7 +131,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Dynamic voice-hook subscription and idle player-index suspension.
 - Configuration validation, localization, safe lifecycle cleanup, and corrupt-data recovery.
 
-[Unreleased]: https://github.com/SeesAll/SmartRadar/compare/1.2.1...HEAD
+[Unreleased]: https://github.com/SeesAll/SmartRadar/compare/1.2.2...HEAD
+[1.2.2]: https://github.com/SeesAll/SmartRadar/compare/1.2.1...1.2.2
 [1.2.1]: https://github.com/SeesAll/SmartRadar/compare/1.2.0...1.2.1
 [1.2.0]: https://github.com/SeesAll/SmartRadar/compare/1.1.1...1.2.0
 [1.1.1]: https://github.com/SeesAll/SmartRadar/compare/1.1.0...1.1.1

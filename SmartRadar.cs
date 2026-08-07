@@ -19,7 +19,7 @@ using UnityEngine;
 
 namespace Oxide.Plugins
 {
-    [Info("SmartRadar", "SeesAll", "1.2.1")]
+    [Info("SmartRadar", "SeesAll", "1.2.2")]
     [Description("Unified administrative vanish and high-performance radar for Rust")]
     public class SmartRadar : RustPlugin
     {
@@ -73,6 +73,8 @@ namespace Oxide.Plugins
         private readonly Dictionary<long, List<StashContainer>> _stashIndex = new Dictionary<long, List<StashContainer>>();
         private readonly Dictionary<long, List<BuildingPrivlidge>> _cupboardIndex = new Dictionary<long, List<BuildingPrivlidge>>();
         private readonly Dictionary<long, List<BaseEntity>> _lootIndex = new Dictionary<long, List<BaseEntity>>();
+        private readonly Dictionary<long, List<BaseEntity>> _npcEntityIndex = new Dictionary<long, List<BaseEntity>>();
+        private readonly Dictionary<int, BaseEntity> _trackedNpcEntities = new Dictionary<int, BaseEntity>();
         private readonly Dictionary<int, long> _stashCells = new Dictionary<int, long>();
         private readonly Dictionary<int, long> _cupboardCells = new Dictionary<int, long>();
         private readonly Dictionary<int, long> _lootCells = new Dictionary<int, long>();
@@ -81,7 +83,9 @@ namespace Oxide.Plugins
         private readonly List<StaticCandidate<StashContainer>> _stashCandidates = new List<StaticCandidate<StashContainer>>(256);
         private readonly List<StaticCandidate<BuildingPrivlidge>> _cupboardCandidates = new List<StaticCandidate<BuildingPrivlidge>>(256);
         private readonly List<StaticCandidate<BaseEntity>> _lootCandidates = new List<StaticCandidate<BaseEntity>>(256);
+        private readonly List<StaticCandidate<BaseEntity>> _npcEntityCandidates = new List<StaticCandidate<BaseEntity>>(128);
         private readonly List<ulong> _sessionRemovalBuffer = new List<ulong>();
+        private readonly List<int> _npcRemovalBuffer = new List<int>();
         private readonly StringBuilder _labelBuilder = new StringBuilder(256);
         private readonly Dictionary<ulong, string> _teamColorCache = new Dictionary<ulong, string>();
         private readonly Dictionary<ulong, VanishCacheEntry> _vanishStateCache = new Dictionary<ulong, VanishCacheEntry>();
@@ -109,6 +113,7 @@ namespace Oxide.Plugins
         private Color _cupboardDrawColor;
         private Color _arrowDrawColor;
         private Color _lootDrawColor;
+        private Color _npcDrawColor;
 
         #endregion
 
@@ -221,6 +226,9 @@ namespace Oxide.Plugins
             [JsonProperty("Maximum loot labels per update")]
             public int MaximumLoot = 60;
 
+            [JsonProperty("Maximum animal and non-player NPC labels per update")]
+            public int MaximumNpcEntities = 75;
+
             [JsonProperty("Maximum total draw commands per session cycle")]
             public int MaximumDrawCommandsPerCycle = 180;
         }
@@ -289,6 +297,9 @@ namespace Oxide.Plugins
 
             [JsonProperty("Loot drawing color")]
             public string LootDrawingColor = "#F2C94C";
+
+            [JsonProperty("NPC and animal drawing color")]
+            public string NpcDrawingColor = "#FFB347";
         }
 
         private sealed class PrivacySettings
@@ -490,6 +501,7 @@ namespace Oxide.Plugins
             _config.Limits.MaximumStashes = Mathf.Clamp(_config.Limits.MaximumStashes, 1, 500);
             _config.Limits.MaximumCupboards = Mathf.Clamp(_config.Limits.MaximumCupboards, 1, 500);
             _config.Limits.MaximumLoot = Mathf.Clamp(_config.Limits.MaximumLoot, 1, 500);
+            _config.Limits.MaximumNpcEntities = Mathf.Clamp(_config.Limits.MaximumNpcEntities, 1, 500);
             _config.Limits.MaximumDrawCommandsPerCycle = Mathf.Clamp(_config.Limits.MaximumDrawCommandsPerCycle, 1, 1500);
 
             _config.Display.VoiceIndicatorDuration = Mathf.Clamp(_config.Display.VoiceIndicatorDuration, 0.1f, 30f);
@@ -504,6 +516,7 @@ namespace Oxide.Plugins
             _cupboardDrawColor = ParseColor(_config.Display.CupboardDrawingColor, new Color(0.02f, 0.96f, 0.9f));
             _arrowDrawColor = ParseColor(_config.Display.ArrowDrawingColor, Color.white);
             _lootDrawColor = ParseColor(_config.Display.LootDrawingColor, new Color(0.95f, 0.79f, 0.3f));
+            _npcDrawColor = ParseColor(_config.Display.NpcDrawingColor, new Color(1f, 0.7f, 0.28f));
         }
 
         private static Color ParseColor(string value, Color fallback)
@@ -857,6 +870,11 @@ namespace Oxide.Plugins
                 }
 
                 BaseEntity entity = networkable as BaseEntity;
+                if (IsTrackedNpcEntity(entity))
+                {
+                    RegisterNpcEntity(entity);
+                    return;
+                }
                 if (IsTrackedLoot(entity)) IndexLoot(entity);
             });
         }
@@ -878,7 +896,9 @@ namespace Oxide.Plugins
                 return;
             }
 
-            RemoveLoot(networkable as BaseEntity);
+            BaseEntity entity = networkable as BaseEntity;
+            RemoveNpcEntity(entity);
+            RemoveLoot(entity);
         }
 
         private void OnUserPermissionRevoked(string id, string permissionName)
@@ -2051,9 +2071,10 @@ namespace Oxide.Plugins
             _activePlayerIndex.Clear();
             foreach (BasePlayer player in BasePlayer.activePlayerList)
             {
-                if (player == null || (!player.IsConnected && !(player is NPCPlayer))) continue;
+                if (player == null || (!player.IsConnected && !IsHumanoidNpc(player))) continue;
                 AddToIndex(_activePlayerIndex, GetCellKey(player.transform.position), player);
             }
+            RebuildNpcEntityIndex();
         }
 
         private void RebuildSleepingPlayerIndex()
@@ -2071,6 +2092,8 @@ namespace Oxide.Plugins
             _stashIndex.Clear();
             _cupboardIndex.Clear();
             _lootIndex.Clear();
+            _npcEntityIndex.Clear();
+            _trackedNpcEntities.Clear();
             _stashCells.Clear();
             _cupboardCells.Clear();
             _lootCells.Clear();
@@ -2093,7 +2116,8 @@ namespace Oxide.Plugins
                 }
 
                 BaseEntity entity = networkable as BaseEntity;
-                if (IsTrackedLoot(entity)) IndexLoot(entity);
+                if (IsTrackedNpcEntity(entity)) RegisterNpcEntity(entity);
+                else if (IsTrackedLoot(entity)) IndexLoot(entity);
             }
         }
 
@@ -2127,6 +2151,58 @@ namespace Oxide.Plugins
         private static bool IsTrackedLoot(BaseEntity entity)
         {
             return entity is DroppedItem || entity is DroppedItemContainer || entity is LootContainer || entity is PlayerCorpse;
+        }
+
+        private static bool IsTrackedNpcEntity(BaseEntity entity)
+        {
+            if (entity == null || entity is BasePlayer) return false;
+            return entity is BaseNpc || HasTypeInHierarchy(entity.GetType(), "BaseNPC2") || entity is FarmableAnimal ||
+                entity is WildlifeHazard || entity is SimpleShark || entity is RidableHorse ||
+                entity is TravellingVendor;
+        }
+
+        private static bool HasTypeInHierarchy(Type type, string typeName)
+        {
+            while (type != null)
+            {
+                if (string.Equals(type.Name, typeName, StringComparison.Ordinal)) return true;
+                type = type.BaseType;
+            }
+            return false;
+        }
+
+        private void RegisterNpcEntity(BaseEntity entity)
+        {
+            if (!IsTrackedNpcEntity(entity) || entity.IsDestroyed) return;
+            int instanceId = entity.GetInstanceID();
+            if (_trackedNpcEntities.ContainsKey(instanceId)) return;
+            _trackedNpcEntities[instanceId] = entity;
+            AddToIndex(_npcEntityIndex, GetCellKey(entity.transform.position), entity);
+        }
+
+        private void RemoveNpcEntity(BaseEntity entity)
+        {
+            if (ReferenceEquals(entity, null)) return;
+            _trackedNpcEntities.Remove(entity.GetInstanceID());
+        }
+
+        private void RebuildNpcEntityIndex()
+        {
+            _npcEntityIndex.Clear();
+            if (_trackedNpcEntities.Count == 0) return;
+            _npcRemovalBuffer.Clear();
+            foreach (KeyValuePair<int, BaseEntity> pair in _trackedNpcEntities)
+            {
+                BaseEntity entity = pair.Value;
+                if (entity == null || entity.IsDestroyed)
+                {
+                    _npcRemovalBuffer.Add(pair.Key);
+                    continue;
+                }
+                AddToIndex(_npcEntityIndex, GetCellKey(entity.transform.position), entity);
+            }
+            for (int i = 0; i < _npcRemovalBuffer.Count; i++)
+                _trackedNpcEntities.Remove(_npcRemovalBuffer[i]);
         }
 
         private void RemoveStash(StashContainer stash)
@@ -2181,6 +2257,8 @@ namespace Oxide.Plugins
             _stashIndex.Clear();
             _cupboardIndex.Clear();
             _lootIndex.Clear();
+            _npcEntityIndex.Clear();
+            _trackedNpcEntities.Clear();
             _stashCells.Clear();
             _cupboardCells.Clear();
             _lootCells.Clear();
@@ -2263,7 +2341,53 @@ namespace Oxide.Plugins
                     draws += DrawNearestAuthorizedCupboardLink(viewer, target, lifetime, budget - draws);
             }
 
+            if (LayerNpcs(preferences) && HasPermission(viewer, PermNpcs) && draws < budget)
+                draws += DrawNpcEntities(viewer, origin, preferences.Distance, lifetime, budget - draws);
+
             return draws;
+        }
+
+        private int DrawNpcEntities(BasePlayer viewer, Vector3 origin, float radius, float lifetime, int budget)
+        {
+            _npcEntityCandidates.Clear();
+            CollectStaticCandidates(_npcEntityIndex, _npcEntityCandidates, origin, radius);
+            _npcEntityCandidates.Sort(CompareLootCandidates);
+            int maximum = Mathf.Min(_config.Limits.MaximumNpcEntities, budget);
+            int draws = 0;
+
+            for (int i = 0; i < _npcEntityCandidates.Count && draws < maximum; i++)
+            {
+                StaticCandidate<BaseEntity> candidate = _npcEntityCandidates[i];
+                BaseEntity entity = candidate.Entity;
+                if (entity == null || entity.IsDestroyed) continue;
+                string health = string.Empty;
+                BaseCombatEntity combatEntity = entity as BaseCombatEntity;
+                if (combatEntity != null)
+                    health = " | <color=#7ED957>" + Mathf.CeilToInt(combatEntity.Health()) + "</color>HP";
+                string label = "<size=13><color=#FFB347>" + GetNpcEntityLabel(entity) + "</color>" + health +
+                    " | <color=#2F6FFF>" + Mathf.RoundToInt(Mathf.Sqrt(candidate.SqrDistance)) + "</color>M</size>";
+                viewer.SendConsoleCommand("ddraw.text", lifetime, _npcDrawColor,
+                    entity.transform.position + Vector3.up * Mathf.Max(1f, _config.Display.StaticLabelHeight), label);
+                draws++;
+            }
+            return draws;
+        }
+
+        private static string GetNpcEntityLabel(BaseEntity entity)
+        {
+            string name = entity == null ? string.Empty : entity.ShortPrefabName;
+            if (string.IsNullOrEmpty(name)) return "NPC";
+            string lower = name.ToLowerInvariant();
+            if (lower.Contains("polarbear")) return "POLAR BEAR";
+            if (lower.Contains("bear")) return "BEAR";
+            if (lower.Contains("wolf")) return "WOLF";
+            if (lower.Contains("boar")) return "BOAR";
+            if (lower.Contains("stag")) return "STAG";
+            if (lower.Contains("chicken")) return "CHICKEN";
+            if (lower.Contains("shark")) return "SHARK";
+            if (lower.Contains("horse")) return "HORSE";
+            if (lower.Contains("vendor")) return "VENDOR";
+            return EscapeRichText(name.Replace('_', ' ').Replace('.', ' ')).ToUpperInvariant();
         }
 
         private void CollectPlayerCandidates(Dictionary<long, List<BasePlayer>> index, BasePlayer viewer, RadarPreferences preferences,
@@ -2303,8 +2427,8 @@ namespace Oxide.Plugins
         private bool ShouldIncludePlayer(BasePlayer viewer, BasePlayer target, RadarPreferences preferences, bool sleeping, ulong ignoredTargetId)
         {
             if (target == null || target.userID == viewer.userID || target.userID == ignoredTargetId) return false;
-            if (!sleeping && !target.IsConnected && !(target is NPCPlayer)) return false;
-            bool npc = target is NPCPlayer;
+            if (!sleeping && !target.IsConnected && !IsHumanoidNpc(target)) return false;
+            bool npc = IsHumanoidNpc(target);
             if (npc)
             {
                 if (!_config.Display.IncludeNpcPlayers || !LayerNpcs(preferences) || !HasPermission(viewer, PermNpcs)) return false;
@@ -2343,7 +2467,7 @@ namespace Oxide.Plugins
             int auth = GetAuthLevel(target);
             if (auth >= 2) _labelBuilder.Append(" | <color=#FF5555>OWNER</color>");
             else if (auth == 1) _labelBuilder.Append(" | <color=#FFAA55>MOD</color>");
-            else if (target is NPCPlayer) _labelBuilder.Append(" | <color=#AAAAAA>NPC</color>");
+            else if (IsHumanoidNpc(target)) _labelBuilder.Append(" | <color=#AAAAAA>NPC</color>");
 
             if (target.currentTeam != 0)
             {
@@ -3258,6 +3382,11 @@ namespace Oxide.Plugins
             if (player == null) return 0;
             if (player.Connection == null) return player.IsAdmin ? 2 : 0;
             return (int)player.Connection.authLevel;
+        }
+
+        private static bool IsHumanoidNpc(BasePlayer player)
+        {
+            return player != null && (player is NPCPlayer || !player.userID.IsSteamId());
         }
 
         private static bool PassesAuthorizationFilter(int authLevel, string filter)

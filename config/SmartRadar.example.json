@@ -32,6 +32,7 @@
     "Maximum stash labels per update": 75,
     "Maximum cupboard labels per update": 75,
     "Maximum loot labels per update": 60,
+    "Maximum animal and non-player NPC labels per update": 75,
     "Maximum total draw commands per session cycle": 180
   },
   "Display settings": {
@@ -55,7 +56,8 @@
     "Stash drawing color": "#E642F5",
     "Cupboard drawing color": "#05F5E5",
     "Vision arrow color": "#FFFFFF",
-    "Loot drawing color": "#F2C94C"
+    "Loot drawing color": "#F2C94C",
+    "NPC and animal drawing color": "#FFB347"
   },
   "Vanish and owner privacy": {
     "Hide vanished players unless explicitly enabled and permitted": true,

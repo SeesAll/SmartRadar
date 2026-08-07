@@ -2,11 +2,11 @@
 
 SmartRadar is a unified administrative vanish and high-performance radar plugin for Rust servers. It is designed for investigative work and runs as one self-contained plugin on Oxide or Carbon.
 
-Version: **1.2.1**
+Version: **1.2.2**
 
 ## Highlights
 
-- Tracks active players, NPCs, sleeping players, dropped/world loot, hidden or exposed stashes, and tool cupboards.
+- Tracks active players, humanoid NPCs, animals, sleeping players, dropped/world loot, hidden or exposed stashes, and tool cupboards.
 - Provides a compact modern investigation panel with live independent layer toggles.
 - Uses shared spatial indexes instead of scanning every tracked entity for every administrator.
 - Runs all radar sessions through one staggered scheduler with configurable workload limits.
@@ -159,7 +159,7 @@ Radar feature permissions do not grant radar command access on their own; a user
 | `smartradar.players` | Permission to select player radar and include players in `all` mode. |
 | `smartradar.stashes` | Permission to select stash radar and include hidden or exposed stashes in `all` mode. |
 | `smartradar.cupboards` | Permission to select tool-cupboard radar and include cupboards in `all` mode. The command name for this mode is `tcs`. |
-| `smartradar.npcs` | Permission to enable the independent NPC radar layer. |
+| `smartradar.npcs` | Permission to enable the independent NPC layer, including humanoid NPCs and supported animals such as bears, wolves, boars, stags, chickens, sharks, horses, wildlife hazards, and vendors. |
 | `smartradar.loot` | Permission to enable the bounded dropped/world-loot radar layer. |
 | `smartradar.arrows` | Permission to enable fixed-length viewing-direction arrows on player targets. |
 | `smartradar.voice` | Permission to enable recent voice-activity indicators on player targets. |
@@ -216,9 +216,9 @@ Vanish state can persist across disconnects and plugin reloads. The `smartradar.
 
 SmartRadar is designed to avoid the most expensive behavior found in simple ESP implementations:
 
-- Active players, sleepers, stashes, cupboards, and tracked loot are assigned to configurable map cells.
+- Active players, humanoid NPCs, moving animals, sleepers, stashes, cupboards, and tracked loot are assigned to configurable map cells.
 - A radar request searches only cells intersecting its radius.
-- Moving-player indexes are rebuilt once and shared by all radar users.
+- Moving-player and animal/NPC indexes are rebuilt once and shared by all radar users.
 - Player indexing sleeps completely when nobody is using player radar.
 - Stashes, cupboards, and loot are updated through entity spawn and kill hooks.
 - Static entities refresh less frequently than moving players by default.
@@ -268,7 +268,7 @@ When preference persistence is enabled, SmartRadar stores each administrator's l
 
 SmartRadar is implemented as an Oxide-compatible `RustPlugin` and does not depend on Carbon-only APIs. Its self-contained Harmony patches use the patching support supplied by the server framework to isolate vanished-player sounds and effects. The same source is intended for Oxide and Carbon.
 
-Version 1.2.1 was compile-checked against local Rust/Oxide assemblies. Its vanish movement updater supports both known Rust `UpdateGroups` signatures. Final runtime validation should be performed on a current test server before production deployment.
+Version 1.2.2 was compile-checked against local Rust/Oxide assemblies. Its vanish movement updater supports both known Rust `UpdateGroups` signatures, and its animal tracking recognizes both older and newer Rust NPC base types. Final runtime validation should be performed on a current test server before production deployment.
 
 ## Changelog
 
