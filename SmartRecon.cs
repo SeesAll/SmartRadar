@@ -19,7 +19,7 @@ using UnityEngine;
 
 namespace Oxide.Plugins
 {
-    [Info("SmartRecon", "SeesAll", "2.1.4")]
+    [Info("SmartRecon", "SeesAll", "2.1.5")]
     [Description("Unified administrative reconnaissance, vanish, radar, inspection, and rapid movement for Rust")]
     public class SmartRecon : RustPlugin
     {
@@ -442,6 +442,9 @@ namespace Oxide.Plugins
 
             [JsonProperty("Show automatically when radar starts")]
             public bool ShowOnRadarStart = true;
+
+            [JsonProperty("Render above inventory blur")]
+            public bool RenderAboveInventoryBlur = true;
 
             [JsonProperty("Anchor minimum")]
             public string AnchorMin = DefaultUiAnchorMin;
@@ -1481,13 +1484,14 @@ namespace Oxide.Plugins
             UserInterfaceSettings settings = _config.UserInterface;
             bool spectating = player.IsSpectating();
             string workflowStatus = spectating ? "SPECTATE ON" : IsBuiltInVanished(player) ? "VANISH ON" : "VANISH OFF";
+            string parentLayer = settings.RenderAboveInventoryBlur ? "Overlay" : "Hud";
             CuiElementContainer elements = new CuiElementContainer();
             elements.Add(new CuiPanel
             {
                 Image = { Color = settings.PanelColor },
                 RectTransform = { AnchorMin = settings.AnchorMin, AnchorMax = settings.AnchorMax },
                 CursorEnabled = spectating
-            }, "Hud", RadarUiName);
+            }, parentLayer, RadarUiName);
 
             elements.Add(new CuiLabel
             {

@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [2.1.5] - 2026-08-07
+
+### Changed
+
+- The investigation panel now renders on Rust's `Overlay` CUI layer so it remains sharp, readable, and clickable above the inventory blur.
+- Added `Render above inventory blur`, enabled by default, allowing servers to restore background `Hud` rendering if another overlay UI conflicts.
+
 ## [2.1.4] - 2026-08-07
 
 ### Changed
@@ -296,7 +303,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Dynamic voice-hook subscription and idle player-index suspension.
 - Configuration validation, localization, safe lifecycle cleanup, and corrupt-data recovery.
 
-[Unreleased]: https://github.com/SeesAll/SmartRecon/compare/2.1.4...HEAD
+[Unreleased]: https://github.com/SeesAll/SmartRecon/compare/2.1.5...HEAD
+[2.1.5]: https://github.com/SeesAll/SmartRecon/compare/2.1.4...2.1.5
 [2.1.4]: https://github.com/SeesAll/SmartRecon/compare/2.1.3...2.1.4
 [2.1.3]: https://github.com/SeesAll/SmartRecon/compare/2.1.2...2.1.3
 [2.1.2]: https://github.com/SeesAll/SmartRecon/compare/2.1.1...2.1.2

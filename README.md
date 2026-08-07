@@ -2,7 +2,7 @@
 
 SmartRecon is a unified Rust administration and investigation suite combining high-performance radar, secure vanish, player inspection, forensic tools, and vanish-only map teleportation. It runs as one self-contained plugin on Oxide or Carbon.
 
-Version: **2.1.4**
+Version: **2.1.5**
 
 ## Highlights
 
@@ -21,6 +21,7 @@ Version: **2.1.4**
 - Automatically starts radar with vision arrows when an administrator vanishes and stops radar when they reappear.
 - Automatically starts radar with vision arrows during native Rust spectating and follows the watched player.
 - Makes the investigation panel directly clickable during native spectating without requiring the inventory cursor.
+- Keeps the investigation panel sharp above Rust's inventory blur for easy reading and clicking.
 - Teleports permitted vanished administrators to right-click map markers, then automatically removes the temporary marker.
 - Hides vanished players and server owners from unauthorized radar users by default.
 - Does not modify player authorization flags.
@@ -78,7 +79,7 @@ With the default configuration:
 1. An authorized administrator runs `/vanish`.
 2. SmartRecon makes the administrator invisible, enables noclip and protections, and starts the administrator's saved radar profile.
 3. Player vision arrows are forced on for that temporary radar session without changing the saved arrows preference.
-4. A compact right-side panel exposes Players, NPCs, Loot, Stashes, Tool Cupboards, Sleepers, Vision/Arrows, Extended Info, TC Links, and Voice toggles. Open the normal inventory screen to obtain a cursor while vanished; during native spectating, SmartRecon supplies the cursor automatically.
+4. A compact right-side panel exposes Players, NPCs, Loot, Stashes, Tool Cupboards, Sleepers, Vision/Arrows, Extended Info, TC Links, and Voice toggles. Open the normal inventory screen to obtain a cursor while vanished; SmartRecon renders above the inventory blur so the controls remain sharp. During native spectating, SmartRecon supplies the cursor automatically.
 5. With `smartrecon.vanish.teleport`, placing a map marker instantly teleports the vanished administrator to that location and removes the temporary marker.
 6. The administrator investigates using radar filters and, when permitted, inventory or reload-key interaction.
 7. Running `/vanish` again makes the administrator visible, stops radar, and removes the panel automatically.
