@@ -1,8 +1,13 @@
+using Facepunch;
+using HarmonyLib;
+using Network;
 using Newtonsoft.Json;
 using Oxide.Core;
 using Oxide.Core.Configuration;
 using Oxide.Core.Libraries.Covalence;
 using Oxide.Core.Plugins;
+using Rust;
+using Rust.Ai;
 using System;
 using System.Collections.Generic;
 using System.Globalization;
@@ -12,8 +17,8 @@ using UnityEngine;
 
 namespace Oxide.Plugins
 {
-    [Info("SmartRadar", "SeesAll", "1.0.0")]
-    [Description("High-performance, privacy-aware administrative radar for Rust")]
+    [Info("SmartRadar", "SeesAll", "1.1.0")]
+    [Description("Unified administrative vanish and high-performance radar for Rust")]
     public class SmartRadar : RustPlugin
     {
         #region Constants and references
@@ -28,14 +33,17 @@ namespace Oxide.Plugins
         private const string PermExtendedRange = "smartradar.extendedrange";
         private const string PermSeeVanished = "smartradar.seevanished";
         private const string PermSeeOwners = "smartradar.seeowners";
+        private const string PermVanish = "smartradar.vanish";
+        private const string PermVanishPermanent = "smartradar.vanish.permanent";
+        private const string PermVanishUnlock = "smartradar.vanish.unlock";
+        private const string PermVanishDamage = "smartradar.vanish.damage";
+        private const string PermVanishInventory = "smartradar.vanish.inventory";
+        private const string PermVanishTeleport = "smartradar.vanish.teleport";
 
         private const string ModePlayers = "players";
         private const string ModeStashes = "stashes";
         private const string ModeCupboards = "tcs";
         private const string ModeAll = "all";
-
-        [PluginReference]
-        private Plugin Vanish;
 
         #endregion
 
@@ -64,6 +72,8 @@ namespace Oxide.Plugins
         private readonly StringBuilder _labelBuilder = new StringBuilder(256);
         private readonly Dictionary<ulong, string> _teamColorCache = new Dictionary<ulong, string>();
         private readonly Dictionary<ulong, VanishCacheEntry> _vanishStateCache = new Dictionary<ulong, VanishCacheEntry>();
+        private readonly HashSet<ulong> _vanishedPlayers = new HashSet<ulong>();
+        private readonly Dictionary<ulong, VanishRuntimeState> _vanishRuntime = new Dictionary<ulong, VanishRuntimeState>();
 
         private float _nextPlayerIndexRebuild;
         private float _nextSleeperIndexRebuild;
@@ -71,7 +81,9 @@ namespace Oxide.Plugins
         private float _nextVoicePrune;
         private int _staggerSequence;
         private int _voiceWatcherCount;
-        private bool _vanishApiWarningShown;
+        private bool _vanishHooksSubscribed;
+
+        private static SmartRadar Instance;
 
         private Color _playerDrawColor;
         private Color _stashDrawColor;
@@ -98,6 +110,12 @@ namespace Oxide.Plugins
 
             [JsonProperty("Vanish and owner privacy")]
             public PrivacySettings Privacy = new PrivacySettings();
+
+            [JsonProperty("Built-in vanish")]
+            public VanishSettings Vanish = new VanishSettings();
+
+            [JsonProperty("Investigative vanish and radar workflow")]
+            public InvestigationSettings Investigation = new InvestigationSettings();
         }
 
         private sealed class GeneralSettings
@@ -237,7 +255,7 @@ namespace Oxide.Plugins
             [JsonProperty("Hide vanished players unless explicitly enabled and permitted")]
             public bool HideVanishedPlayers = true;
 
-            [JsonProperty("Treat Rust limited networking as vanished when the Vanish API is unavailable")]
+            [JsonProperty("Treat any Rust limited-networking player as vanished")]
             public bool TreatLimitedNetworkingAsVanished = true;
 
             [JsonProperty("Mark visible vanished players with [V]")]
@@ -245,6 +263,75 @@ namespace Oxide.Plugins
 
             [JsonProperty("Hide owners from moderators unless they have smartradar.seeowners")]
             public bool HideOwnersFromModerators = true;
+        }
+
+        private sealed class VanishSettings
+        {
+            [JsonProperty("Command aliases", ObjectCreationHandling = ObjectCreationHandling.Replace)]
+            public string[] CommandAliases = { "vanish", "v" };
+
+            [JsonProperty("Inventory inspection command aliases", ObjectCreationHandling = ObjectCreationHandling.Replace)]
+            public string[] InventoryCommandAliases = { "inv", "invspy" };
+
+            [JsonProperty("Automatically vanish permitted administrators when they connect")]
+            public bool VanishOnConnect = false;
+
+            [JsonProperty("Keep vanish enabled across disconnects and plugin reloads")]
+            public bool PersistVanishState = true;
+
+            [JsonProperty("Enable noclip when entering vanish")]
+            public bool EnableNoclip = true;
+
+            [JsonProperty("Pause and protect metabolism while vanished")]
+            public bool PauseMetabolism = true;
+
+            [JsonProperty("Pause anti-hack checks while vanished")]
+            public bool BypassAntiHack = true;
+
+            [JsonProperty("Prevent vanished administrators from receiving damage")]
+            public bool PreventIncomingDamage = true;
+
+            [JsonProperty("Prevent vanished administrators from dealing damage without permission")]
+            public bool PreventOutgoingDamage = true;
+
+            [JsonProperty("Allow lock bypass with smartradar.vanish.unlock")]
+            public bool EnableLockBypass = true;
+
+            [JsonProperty("Enable inventory inspection commands")]
+            public bool EnableInventoryInspection = true;
+
+            [JsonProperty("Enable reload-key investigative interaction while vanished")]
+            public bool EnableReloadInteraction = true;
+
+            [JsonProperty("Enable reload plus map-marker teleport with smartradar.vanish.teleport")]
+            public bool EnableMapMarkerTeleport = false;
+
+            [JsonProperty("Show Rust's native invisibility indicator")]
+            public bool ShowNativeIndicator = true;
+
+            [JsonProperty("Show vanish chat notifications")]
+            public bool EnableNotifications = true;
+
+            [JsonProperty("Log vanish and reappear events")]
+            public bool LogUsage = false;
+        }
+
+        private sealed class InvestigationSettings
+        {
+            [JsonProperty("Automatically start radar when entering vanish")]
+            public bool StartRadarOnVanish = true;
+
+            [JsonProperty("Automatically stop radar when leaving vanish")]
+            public bool StopRadarOnReappear = true;
+
+            [JsonProperty("Use the administrator's saved radar mode and filters")]
+            public bool UseSavedRadarPreferences = true;
+
+            [JsonProperty("Radar mode when saved preferences are not used")]
+            public string RadarMode = ModePlayers;
+
+            [JsonProperty("Force player vision arrows on while vanish started radar")]
+            public bool ForceVisionArrows = true;
         }
 
         protected override void LoadDefaultConfig()
@@ -286,9 +373,16 @@ namespace Oxide.Plugins
             if (_config.Limits == null) _config.Limits = new LimitSettings();
             if (_config.Display == null) _config.Display = new DisplaySettings();
             if (_config.Privacy == null) _config.Privacy = new PrivacySettings();
+            if (_config.Vanish == null) _config.Vanish = new VanishSettings();
+            if (_config.Investigation == null) _config.Investigation = new InvestigationSettings();
 
             if (_config.General.CommandAliases == null || _config.General.CommandAliases.Length == 0)
                 _config.General.CommandAliases = new[] { "radar", "sradar", "smartradar" };
+            if (_config.Vanish.CommandAliases == null || _config.Vanish.CommandAliases.Length == 0)
+                _config.Vanish.CommandAliases = new[] { "vanish", "v" };
+            if (_config.Vanish.InventoryCommandAliases == null || _config.Vanish.InventoryCommandAliases.Length == 0)
+                _config.Vanish.InventoryCommandAliases = new[] { "inv", "invspy" };
+            _config.Investigation.RadarMode = NormalizeMode(_config.Investigation.RadarMode) ?? ModePlayers;
 
             _config.General.MinimumRefreshRate = Mathf.Clamp(_config.General.MinimumRefreshRate, 0.1f, 30f);
             _config.General.MaximumRefreshRate = Mathf.Max(_config.General.MinimumRefreshRate, _config.General.MaximumRefreshRate);
@@ -342,6 +436,9 @@ namespace Oxide.Plugins
         {
             [JsonProperty("Player preferences")]
             public Dictionary<ulong, RadarPreferences> Preferences = new Dictionary<ulong, RadarPreferences>();
+
+            [JsonProperty("Administrators who should remain vanished")]
+            public HashSet<ulong> VanishedUsers = new HashSet<ulong>();
         }
 
         private sealed class RadarPreferences
@@ -368,6 +465,8 @@ namespace Oxide.Plugins
                 if (_storedData == null) _storedData = new StoredData();
                 if (_storedData.Preferences == null)
                     _storedData.Preferences = new Dictionary<ulong, RadarPreferences>();
+                if (_storedData.VanishedUsers == null)
+                    _storedData.VanishedUsers = new HashSet<ulong>();
             }
             catch (Exception exception)
             {
@@ -379,10 +478,19 @@ namespace Oxide.Plugins
 
         private void SaveData()
         {
-            if (_dataFile == null || _storedData == null || !_config.General.PersistPreferences)
+            if (_dataFile == null || _storedData == null)
                 return;
 
-            _dataFile.WriteObject(_storedData);
+            StoredData snapshot = new StoredData
+            {
+                Preferences = _config.General.PersistPreferences
+                    ? _storedData.Preferences
+                    : new Dictionary<ulong, RadarPreferences>(),
+                VanishedUsers = _config.Vanish.PersistVanishState
+                    ? _storedData.VanishedUsers
+                    : new HashSet<ulong>()
+            };
+            _dataFile.WriteObject(snapshot);
             _dataDirty = false;
         }
 
@@ -469,7 +577,17 @@ namespace Oxide.Plugins
                 ["ConsolePlayerOnly"] = "SmartRadar must be controlled by an in-game player.",
                 ["DurationSet"] = "SmartRadar will automatically disable in {0:0.#} seconds.",
                 ["DurationTooHigh"] = "Maximum temporary radar duration is {0:0.#} seconds.",
-                ["Expired"] = "SmartRadar's temporary duration expired."
+                ["Expired"] = "SmartRadar's temporary duration expired.",
+                ["VanishEnabled"] = "SmartRadar vanish enabled. Investigative radar: {0}.",
+                ["VanishDisabled"] = "SmartRadar vanish disabled. Investigative radar stopped.",
+                ["VanishAlreadyEnabled"] = "SmartRadar vanish is already enabled.",
+                ["VanishAlreadyDisabled"] = "SmartRadar vanish is already disabled.",
+                ["VanishPermanent"] = "Your permanent-vanish permission prevents reappearing.",
+                ["VanishStatus"] = "SmartRadar vanish: {0} | radar: {1} | arrows: {2}.",
+                ["VanishHelp"] = "SmartRadar vanish commands:\n/vanish - toggle\n/vanish on|off|status\n/inv <name|steamid> - inspect a player's inventory",
+                ["InventoryNoTarget"] = "No matching active or sleeping player was found for '{0}'.",
+                ["InventoryUsage"] = "Usage: /inv <name or Steam ID>, or look directly at a nearby player and use /inv.",
+                ["VanishRadarUnavailable"] = "Vanish enabled, but investigative radar could not start because its command or mode permissions are missing."
             }, this);
         }
 
@@ -490,10 +608,15 @@ namespace Oxide.Plugins
 
         private void Init()
         {
+            Instance = this;
             RegisterPermissions();
             LoadData();
             AddCovalenceCommand(_config.General.CommandAliases, nameof(CommandRadar));
+            AddCovalenceCommand(_config.Vanish.CommandAliases, nameof(CommandVanish));
+            if (_config.Vanish.EnableInventoryInspection)
+                AddCovalenceCommand(_config.Vanish.InventoryCommandAliases, nameof(CommandInventory));
             Unsubscribe(nameof(OnPlayerVoice));
+            UnsubscribeVanishHooks();
         }
 
         private void OnServerInitialized()
@@ -509,16 +632,35 @@ namespace Oxide.Plugins
             _nextStaticIndexRebuild = now + _config.Scheduler.StaticIndexRebuild;
             _nextVoicePrune = now + 10f;
             timer.Every(_config.Scheduler.TickInterval, SchedulerTick);
+
+            foreach (BasePlayer player in BasePlayer.activePlayerList)
+            {
+                if (ShouldRestoreVanish(player))
+                    NextTick(delegate { if (player != null && player.IsConnected) EnterVanish(player, false); });
+            }
         }
 
         private void Unload()
         {
             if (_dataDirty) SaveData();
+
+            List<BasePlayer> hidden = new List<BasePlayer>();
+            foreach (ulong userId in _vanishedPlayers)
+            {
+                BasePlayer player = BasePlayer.FindByID(userId);
+                if (player != null) hidden.Add(player);
+            }
+            for (int i = 0; i < hidden.Count; i++) ExitVanish(hidden[i], false, true, true);
+
             _sessions.Clear();
             _voiceActivity.Clear();
             _teamColorCache.Clear();
             _vanishStateCache.Clear();
+            _vanishedPlayers.Clear();
+            _vanishRuntime.Clear();
             ClearIndexes();
+            UnsubscribeVanishHooks();
+            Instance = null;
             _serverInitialized = false;
         }
 
@@ -542,9 +684,35 @@ namespace Oxide.Plugins
         {
             if (player == null) return;
             StopRadar(player, false);
+
+            if (IsBuiltInVanished(player))
+            {
+                if (_config.Vanish.PersistVanishState || HasExplicitPermission(player, PermVanishPermanent))
+                {
+                    _storedData.VanishedUsers.Add(player.userID);
+                    _dataDirty = true;
+                    DetachVanishRuntime(player);
+                    _vanishedPlayers.Remove(player.userID);
+                    if (_vanishedPlayers.Count == 0) UnsubscribeVanishHooks();
+                }
+                else ExitVanish(player, false, false, true);
+            }
+
             _voiceActivity.Remove(player.userID);
             _vanishStateCache.Remove(player.userID);
             if (_dataDirty) SaveData();
+        }
+
+        private void OnPlayerConnected(BasePlayer player)
+        {
+            if (player == null) return;
+            timer.Once(2f, delegate
+            {
+                if (player == null || !player.IsConnected) return;
+                if (ShouldRestoreVanish(player)) EnterVanish(player, false);
+                else if (player._limitedNetworking && _storedData.VanishedUsers.Contains(player.userID))
+                    ExitVanish(player, false, false, true);
+            });
         }
 
         private void OnPlayerVoice(BasePlayer player, byte[] data)
@@ -587,16 +755,123 @@ namespace Oxide.Plugins
 
         private void OnUserPermissionRevoked(string id, string permissionName)
         {
-            if (!string.Equals(permissionName, PermUse, StringComparison.OrdinalIgnoreCase)) return;
             ulong userId;
             if (!ulong.TryParse(id, out userId)) return;
             BasePlayer player = BasePlayer.FindByID(userId);
-            if (player != null && !HasPermission(player, PermUse)) StopRadar(player, true);
+            if (player == null) return;
+
+            if (string.Equals(permissionName, PermUse, StringComparison.OrdinalIgnoreCase) && !HasPermission(player, PermUse))
+                StopRadar(player, true);
+            else if (string.Equals(permissionName, PermVanish, StringComparison.OrdinalIgnoreCase) &&
+                     !HasPermission(player, PermVanish) && IsBuiltInVanished(player))
+                ExitVanish(player, true, false, false);
+        }
+
+        private void OnUserPermissionGranted(string id, string permissionName)
+        {
+            if (!string.Equals(permissionName, PermVanishPermanent, StringComparison.OrdinalIgnoreCase)) return;
+            ulong userId;
+            if (!ulong.TryParse(id, out userId)) return;
+            BasePlayer player = BasePlayer.FindByID(userId);
+            if (player != null && player.IsConnected && HasPermission(player, PermVanish) && !IsBuiltInVanished(player))
+                EnterVanish(player, true);
         }
 
         #endregion
 
         #region Commands
+
+        private void CommandVanish(IPlayer caller, string command, string[] args)
+        {
+            BasePlayer player = caller.Object as BasePlayer;
+            if (player == null)
+            {
+                caller.Reply(MessageText("ConsolePlayerOnly", caller.Id));
+                return;
+            }
+            if (!HasPermission(player, PermVanish))
+            {
+                Reply(player, "NoPermission");
+                return;
+            }
+
+            bool currentlyVanished = IsBuiltInVanished(player);
+            if (args != null && args.Length > 0)
+            {
+                string action = args[0].ToLowerInvariant();
+                if (action == "status")
+                {
+                    RadarSession activeSession;
+                    _sessions.TryGetValue(player.userID, out activeSession);
+                    Reply(player, "VanishStatus", currentlyVanished ? "ON" : "OFF", activeSession != null ? "ON" : "OFF",
+                        activeSession != null && (activeSession.Preferences.ShowArrows || activeSession.ForcedArrows) ? "ON" : "OFF");
+                    return;
+                }
+                if (action == "help")
+                {
+                    Reply(player, "VanishHelp");
+                    return;
+                }
+
+                bool requested;
+                if (action == "on" || action == "true" || action == "1") requested = true;
+                else if (action == "off" || action == "false" || action == "0") requested = false;
+                else
+                {
+                    Reply(player, "VanishHelp");
+                    return;
+                }
+
+                if (requested)
+                {
+                    if (currentlyVanished) Reply(player, "VanishAlreadyEnabled");
+                    else EnterVanish(player, true);
+                }
+                else
+                {
+                    if (HasExplicitPermission(player, PermVanishPermanent)) Reply(player, "VanishPermanent");
+                    else if (!currentlyVanished) Reply(player, "VanishAlreadyDisabled");
+                    else ExitVanish(player, true, false, false);
+                }
+                return;
+            }
+
+            if (currentlyVanished)
+            {
+                if (HasExplicitPermission(player, PermVanishPermanent)) Reply(player, "VanishPermanent");
+                else ExitVanish(player, true, false, false);
+            }
+            else EnterVanish(player, true);
+        }
+
+        private void CommandInventory(IPlayer caller, string command, string[] args)
+        {
+            BasePlayer viewer = caller.Object as BasePlayer;
+            if (viewer == null)
+            {
+                caller.Reply(MessageText("ConsolePlayerOnly", caller.Id));
+                return;
+            }
+            if (!HasPermission(viewer, PermVanishInventory))
+            {
+                Reply(viewer, "NoPermission");
+                return;
+            }
+
+            BasePlayer target = null;
+            if (args != null && args.Length > 0)
+                target = FindPlayer(args[0]);
+            else
+                target = RaycastPlayer(viewer, 5f);
+
+            if (target == null)
+            {
+                if (args == null || args.Length == 0) Reply(viewer, "InventoryUsage");
+                else Reply(viewer, "InventoryNoTarget", args[0]);
+                return;
+            }
+            OpenPlayerInventory(viewer, target);
+        }
 
         private void CommandRadar(IPlayer caller, string command, string[] args)
         {
@@ -978,9 +1253,16 @@ namespace Oxide.Plugins
             public float NextPlayerUpdate;
             public float NextStaticUpdate;
             public float ExpiresAt;
+            public bool StartedByVanish;
+            public bool ForcedArrows;
         }
 
         private void StartRadar(BasePlayer player, RadarPreferences preferences)
+        {
+            StartRadar(player, preferences, true);
+        }
+
+        private void StartRadar(BasePlayer player, RadarPreferences preferences, bool notify)
         {
             string deniedFeature;
             if (!CanUseMode(player, preferences.Mode, out deniedFeature))
@@ -1011,6 +1293,8 @@ namespace Oxide.Plugins
             session.NextPlayerUpdate = Time.realtimeSinceStartup + stagger;
             session.NextStaticUpdate = Time.realtimeSinceStartup + stagger;
             session.ExpiresAt = 0f;
+            session.StartedByVanish = false;
+            session.ForcedArrows = false;
             if (ModeIncludesPlayers(preferences.Mode)) _nextPlayerIndexRebuild = 0f;
             if (preferences.ShowSleepers) _nextSleeperIndexRebuild = 0f;
             RefreshVoiceWatcherCount();
@@ -1018,7 +1302,7 @@ namespace Oxide.Plugins
             if (_config.General.LogUsage)
                 Puts(player.displayName + " (" + player.UserIDString + ") enabled SmartRadar in " + preferences.Mode + " mode.");
 
-            Reply(player, "Enabled", preferences.Mode, preferences.Distance, preferences.RefreshRate);
+            if (notify) Reply(player, "Enabled", preferences.Mode, preferences.Distance, preferences.RefreshRate);
         }
 
         private void StopRadar(BasePlayer player, bool notify)
@@ -1045,7 +1329,7 @@ namespace Oxide.Plugins
                 preferences.Mode,
                 preferences.Distance,
                 preferences.RefreshRate,
-                preferences.ShowArrows ? "on" : "off",
+                preferences.ShowArrows || session.ForcedArrows ? "on" : "off",
                 preferences.ShowVoice ? "on" : "off",
                 preferences.ShowSleepers ? "on" : "off",
                 preferences.ShowVanished ? "on" : "off",
@@ -1395,7 +1679,7 @@ namespace Oxide.Plugins
                     _config.Display.DistanceFade, _config.Display.DepthTest, _config.Display.PlayerLabelScale, target.net.ID);
                 draws++;
 
-                if (preferences.ShowArrows && HasPermission(viewer, PermArrows) && draws < budget)
+                if ((preferences.ShowArrows || session.ForcedArrows) && HasPermission(viewer, PermArrows) && draws < budget)
                 {
                     Vector3 startWorld = target.eyes.position;
                     Vector3 endWorld = startWorld + target.eyes.HeadRay().direction * _config.Display.ArrowLength;
@@ -1619,6 +1903,440 @@ namespace Oxide.Plugins
 
         #endregion
 
+        #region Built-in vanish
+
+        private sealed class VanishRuntimeState
+        {
+            public bool EnabledNoclip;
+            public float Calories;
+            public float Hydration;
+            public float Temperature;
+            public float Radiation;
+            public float Oxygen;
+            public float Wetness;
+        }
+
+        private bool ShouldRestoreVanish(BasePlayer player)
+        {
+            if (player == null || !HasPermission(player, PermVanish)) return false;
+            if (HasExplicitPermission(player, PermVanishPermanent)) return true;
+            if (_config.Vanish.VanishOnConnect) return true;
+            return _config.Vanish.PersistVanishState && _storedData.VanishedUsers.Contains(player.userID);
+        }
+
+        private bool EnterVanish(BasePlayer player, bool notify)
+        {
+            return EnterVanish(player, notify, false);
+        }
+
+        private bool EnterVanish(BasePlayer player, bool notify, bool bypassPermission)
+        {
+            if (player == null || !player.IsConnected || IsBuiltInVanished(player)) return false;
+            if (!bypassPermission && !HasPermission(player, PermVanish))
+            {
+                if (notify) Reply(player, "NoPermission");
+                return false;
+            }
+            if (Interface.CallHook("OnVanishDisappear", player) != null) return false;
+
+            VanishRuntimeState state = CaptureVanishRuntime(player);
+            _vanishRuntime[player.userID] = state;
+            _vanishedPlayers.Add(player.userID);
+            _vanishStateCache.Remove(player.userID);
+
+            if (_config.Vanish.BypassAntiHack)
+                player.PauseFlyHackDetection(float.MaxValue);
+
+            SimpleAIMemory.AddIgnorePlayer(player);
+            BaseEntity.Query.Server.RemovePlayer(player);
+            player.syncPosition = false;
+            player.limitNetworking = true;
+            player.isInvisible = true;
+            player.GetHeldEntity()?.SetHeld(false);
+            player.DisablePlayerCollider();
+
+            List<Connection> connections = Pool.Get<List<Connection>>();
+            foreach (Connection connection in Net.sv.connections)
+            {
+                if (connection != null && connection.connected && connection.isAuthenticated &&
+                    connection.player is BasePlayer && connection.player != player)
+                    connections.Add(connection);
+            }
+            player.OnNetworkSubscribersLeave(connections);
+            Pool.FreeUnmanaged(ref connections);
+
+            if (ServerOcclusion.OcclusionEnabled) player.OcclusionMakeSubscribersForget();
+            if (player.GetComponent<SmartVanishController>() == null)
+                player.gameObject.AddComponent<SmartVanishController>();
+
+            if (_config.Vanish.EnableNoclip && !player.IsFlying && !player.isMounted)
+            {
+                state.EnabledNoclip = true;
+                player.SendConsoleCommand("noclip");
+            }
+
+            if (_config.Vanish.ShowNativeIndicator)
+                player.SendConsoleCommand("debug.setinvis_ui true");
+
+            if (_config.Vanish.PersistVanishState || HasExplicitPermission(player, PermVanishPermanent))
+            {
+                _storedData.VanishedUsers.Add(player.userID);
+                _dataDirty = true;
+                SaveData();
+            }
+
+            if (_vanishedPlayers.Count == 1) SubscribeVanishHooks();
+            bool radarStarted = StartInvestigationRadar(player);
+
+            if (_config.Vanish.LogUsage)
+                Puts(player.displayName + " (" + player.UserIDString + ") entered SmartRadar vanish.");
+            if (notify && _config.Vanish.EnableNotifications)
+                Reply(player, "VanishEnabled", radarStarted ? "ON" : "OFF");
+            if (notify && _config.Investigation.StartRadarOnVanish && !radarStarted)
+                Reply(player, "VanishRadarUnavailable");
+            return true;
+        }
+
+        private bool ExitVanish(BasePlayer player, bool notify, bool preservePersistedState, bool force)
+        {
+            if (player == null) return false;
+            bool managed = IsBuiltInVanished(player);
+            if (!managed && !player._limitedNetworking) return false;
+            if (!force && Interface.CallHook("OnVanishReappear", player) != null) return false;
+
+            VanishRuntimeState state;
+            _vanishRuntime.TryGetValue(player.userID, out state);
+            DetachVanishRuntime(player);
+
+            if (_config.Vanish.BypassAntiHack)
+                player.PauseFlyHackDetection(0f);
+
+            SimpleAIMemory.RemoveIgnorePlayer(player);
+            BaseEntity.Query.Server.RemovePlayer(player);
+            BaseEntity.Query.Server.AddPlayer(player);
+            player.syncPosition = true;
+            player.limitNetworking = false;
+            player._limitedNetworking = false;
+            player.isInvisible = false;
+            player.EnablePlayerCollider();
+            player.UpdateNetworkGroup();
+            player.SendNetworkUpdateImmediate();
+            player.GetHeldEntity()?.SendNetworkUpdate();
+
+            if (state != null)
+            {
+                RestoreMetabolism(player, state);
+                if (state.EnabledNoclip && player.IsFlying) player.SendConsoleCommand("noclip");
+            }
+
+            if (_config.Vanish.ShowNativeIndicator)
+                player.SendConsoleCommand("debug.setinvis_ui false");
+
+            _vanishedPlayers.Remove(player.userID);
+            _vanishRuntime.Remove(player.userID);
+            _vanishStateCache.Remove(player.userID);
+            if (!preservePersistedState && !HasExplicitPermission(player, PermVanishPermanent))
+            {
+                _storedData.VanishedUsers.Remove(player.userID);
+                _dataDirty = true;
+                SaveData();
+            }
+            if (_vanishedPlayers.Count == 0) UnsubscribeVanishHooks();
+
+            if (_config.Investigation.StopRadarOnReappear) StopRadar(player, false);
+            if (_config.Vanish.LogUsage)
+                Puts(player.displayName + " (" + player.UserIDString + ") left SmartRadar vanish.");
+            if (notify && _config.Vanish.EnableNotifications) Reply(player, "VanishDisabled");
+            return true;
+        }
+
+        private VanishRuntimeState CaptureVanishRuntime(BasePlayer player)
+        {
+            VanishRuntimeState state = new VanishRuntimeState();
+            if (player == null || player.metabolism == null) return state;
+            state.Calories = player.metabolism.calories.value;
+            state.Hydration = player.metabolism.hydration.value;
+            state.Temperature = player.metabolism.temperature.value;
+            state.Radiation = player.metabolism.radiation_poison.value;
+            state.Oxygen = player.metabolism.oxygen.value;
+            state.Wetness = player.metabolism.wetness.value;
+            return state;
+        }
+
+        private void MaintainVanishMetabolism(BasePlayer player)
+        {
+            if (!_config.Vanish.PauseMetabolism || player == null || player.metabolism == null) return;
+            player.metabolism.calories.value = player.metabolism.calories.max;
+            player.metabolism.hydration.value = player.metabolism.hydration.max;
+            player.metabolism.temperature.value = 20f;
+            player.metabolism.radiation_poison.value = 0f;
+            player.metabolism.oxygen.value = player.metabolism.oxygen.max;
+            player.metabolism.wetness.value = 0f;
+        }
+
+        private void RestoreMetabolism(BasePlayer player, VanishRuntimeState state)
+        {
+            if (!_config.Vanish.PauseMetabolism || player == null || player.metabolism == null || state == null) return;
+            player.metabolism.calories.value = state.Calories;
+            player.metabolism.hydration.value = state.Hydration;
+            player.metabolism.temperature.value = state.Temperature;
+            player.metabolism.radiation_poison.value = state.Radiation;
+            player.metabolism.oxygen.value = state.Oxygen;
+            player.metabolism.wetness.value = state.Wetness;
+            player.SendNetworkUpdate();
+        }
+
+        private void DetachVanishRuntime(BasePlayer player)
+        {
+            if (player == null) return;
+            SmartVanishController controller = player.GetComponent<SmartVanishController>();
+            if (controller != null) UnityEngine.Object.Destroy(controller);
+        }
+
+        private bool StartInvestigationRadar(BasePlayer player)
+        {
+            if (!_config.Investigation.StartRadarOnVanish || !HasPermission(player, PermUse)) return false;
+
+            RadarPreferences preferences = _config.Investigation.UseSavedRadarPreferences
+                ? GetPreferences(player.userID)
+                : CreateDefaultPreferences();
+            if (!_config.Investigation.UseSavedRadarPreferences)
+                preferences.Mode = _config.Investigation.RadarMode;
+
+            string deniedFeature;
+            if (!CanUseMode(player, preferences.Mode, out deniedFeature))
+            {
+                string fallbackMode = GetFirstPermittedMode(player);
+                if (fallbackMode == null) return false;
+                preferences.Mode = fallbackMode;
+            }
+
+            bool forceArrows = _config.Investigation.ForceVisionArrows && HasPermission(player, PermArrows);
+            StartRadar(player, preferences, false);
+            RadarSession session;
+            if (_sessions.TryGetValue(player.userID, out session))
+            {
+                session.StartedByVanish = true;
+                session.ForcedArrows = forceArrows;
+            }
+            return session != null;
+        }
+
+        private bool IsBuiltInVanished(BasePlayer player)
+        {
+            return player != null && _vanishedPlayers.Contains(player.userID);
+        }
+
+        private void SubscribeVanishHooks()
+        {
+            if (_vanishHooksSubscribed) return;
+            Subscribe(nameof(OnPlayerColliderEnable));
+            Subscribe(nameof(OnPlayerSpectate));
+            Subscribe(nameof(OnPlayerSpectateEnd));
+            if (_config.Vanish.PreventIncomingDamage || _config.Vanish.PreventOutgoingDamage)
+                Subscribe(nameof(OnEntityTakeDamage));
+            if (_config.Vanish.EnableLockBypass) Subscribe(nameof(CanUseLockedEntity));
+            if (_config.Vanish.BypassAntiHack) Subscribe(nameof(OnPlayerViolation));
+            if (_config.Vanish.EnableMapMarkerTeleport) Subscribe(nameof(OnMapMarkerAdd));
+            _vanishHooksSubscribed = true;
+        }
+
+        private void UnsubscribeVanishHooks()
+        {
+            Unsubscribe(nameof(OnPlayerColliderEnable));
+            Unsubscribe(nameof(OnPlayerSpectate));
+            Unsubscribe(nameof(OnPlayerSpectateEnd));
+            Unsubscribe(nameof(OnEntityTakeDamage));
+            Unsubscribe(nameof(CanUseLockedEntity));
+            Unsubscribe(nameof(OnPlayerViolation));
+            Unsubscribe(nameof(OnMapMarkerAdd));
+            _vanishHooksSubscribed = false;
+        }
+
+        private object OnPlayerColliderEnable(BasePlayer player, CapsuleCollider collider)
+        {
+            return IsBuiltInVanished(player) ? (object)true : null;
+        }
+
+        private void OnPlayerSpectate(BasePlayer player, string spectateFilter)
+        {
+            if (IsBuiltInVanished(player)) DetachVanishRuntime(player);
+        }
+
+        private void OnPlayerSpectateEnd(BasePlayer player, string spectateFilter)
+        {
+            if (!IsBuiltInVanished(player)) return;
+            NextTick(delegate
+            {
+                if (player != null && player.IsConnected && player.GetComponent<SmartVanishController>() == null)
+                    player.gameObject.AddComponent<SmartVanishController>();
+            });
+        }
+
+        private object OnPlayerViolation(BasePlayer player, AntiHackType type, float amount)
+        {
+            return IsBuiltInVanished(player) ? (object)true : null;
+        }
+
+        private object CanUseLockedEntity(BasePlayer player, BaseLock baseLock)
+        {
+            if (!IsBuiltInVanished(player)) return null;
+            return HasPermission(player, PermVanishUnlock) ? (object)true : null;
+        }
+
+        private object OnEntityTakeDamage(BaseCombatEntity entity, HitInfo info)
+        {
+            if (entity == null || info == null) return null;
+            BasePlayer attacker = info.InitiatorPlayer;
+            BasePlayer victim = entity.ToPlayer();
+            bool attackerVanished = IsBuiltInVanished(attacker);
+            bool victimVanished = IsBuiltInVanished(victim);
+            if (!attackerVanished && !victimVanished) return null;
+            if (victimVanished && _config.Vanish.PreventIncomingDamage) return true;
+            if (attackerVanished && _config.Vanish.PreventOutgoingDamage && !HasPermission(attacker, PermVanishDamage))
+                return true;
+            return null;
+        }
+
+        private object OnMapMarkerAdd(BasePlayer player, ProtoBuf.MapNote note)
+        {
+            if (!IsBuiltInVanished(player) || note == null || player.isMounted ||
+                !HasPermission(player, PermVanishTeleport) || !player.serverInput.IsDown(BUTTON.RELOAD))
+                return null;
+            player.serverInput.Clear();
+            Vector3 destination = new Vector3(note.worldPosition.x, player.transform.position.y, note.worldPosition.z);
+            player.MovePosition(destination, false);
+            player.ClientRPC(RpcTarget.Player("ForcePositionTo", player), destination);
+            note.Dispose();
+            return true;
+        }
+
+        private BasePlayer FindPlayer(string query)
+        {
+            if (string.IsNullOrWhiteSpace(query)) return null;
+            ulong userId;
+            if (ulong.TryParse(query, out userId)) return BasePlayer.FindAwakeOrSleepingByID(userId);
+            BasePlayer partial = null;
+            foreach (BasePlayer player in BasePlayer.allPlayerList)
+            {
+                if (player == null || string.IsNullOrEmpty(player.displayName)) continue;
+                if (string.Equals(player.displayName, query, StringComparison.OrdinalIgnoreCase)) return player;
+                if (partial == null && player.displayName.StartsWith(query, StringComparison.OrdinalIgnoreCase)) partial = player;
+            }
+            return partial;
+        }
+
+        private BasePlayer RaycastPlayer(BasePlayer viewer, float distance)
+        {
+            RaycastHit hit;
+            int mask = LayerMask.GetMask(LayerMask.LayerToName((int)Layer.Player_Server));
+            if (!Physics.Raycast(viewer.eyes.HeadRay(), out hit, distance, mask)) return null;
+            return hit.GetEntity() as BasePlayer;
+        }
+
+        private void OpenPlayerInventory(BasePlayer viewer, BasePlayer target)
+        {
+            if (viewer == null || target == null) return;
+            viewer.inventory.loot.Clear();
+            viewer.inventory.loot.AddContainer(target.inventory.containerMain);
+            viewer.inventory.loot.AddContainer(target.inventory.containerWear);
+            viewer.inventory.loot.AddContainer(target.inventory.containerBelt);
+            viewer.inventory.loot.entitySource = RelationshipManager.ServerInstance;
+            viewer.inventory.loot.PositionChecks = false;
+            viewer.inventory.loot.MarkDirty();
+            viewer.inventory.loot.SendImmediate();
+            viewer.ClientRPC(RpcTarget.Player("RPC_OpenLootPanel", viewer), "player_corpse");
+        }
+
+        private void HandleVanishInteraction(BasePlayer player)
+        {
+            if (!_config.Vanish.EnableReloadInteraction || player == null || !IsBuiltInVanished(player)) return;
+            RaycastHit hit;
+            int mask = LayerMask.GetMask(
+                LayerMask.LayerToName((int)Layer.Construction),
+                LayerMask.LayerToName((int)Layer.Deployed),
+                LayerMask.LayerToName((int)Layer.Vehicle_World),
+                LayerMask.LayerToName((int)Layer.Player_Server));
+            if (!Physics.Raycast(player.eyes.HeadRay(), out hit, 5f, mask)) return;
+            BaseEntity entity = hit.GetEntity() as BaseEntity;
+            if (entity == null) return;
+
+            BasePlayer target = entity as BasePlayer;
+            if (target != null)
+            {
+                if (HasPermission(player, PermVanishInventory)) OpenPlayerInventory(player, target);
+                return;
+            }
+
+            StorageContainer container = entity as StorageContainer;
+            if (container != null)
+            {
+                if (!HasPermission(player, PermVanishInventory)) return;
+                player.inventory.loot.Clear();
+                player.inventory.loot.AddContainer(container.inventory);
+                player.inventory.loot.entitySource = container;
+                player.inventory.loot.PositionChecks = false;
+                player.inventory.loot.MarkDirty();
+                player.inventory.loot.SendImmediate();
+                player.ClientRPC(RpcTarget.Player("RPC_OpenLootPanel", player), "generic_resizable");
+                return;
+            }
+
+            if (!HasPermission(player, PermVanishUnlock)) return;
+            Door door = entity as Door;
+            if (door != null)
+            {
+                door.SetOpen(!door.IsOpen(), false);
+                return;
+            }
+            BaseMountable mountable = entity.GetComponent<BaseMountable>();
+            if (mountable != null) mountable.AttemptMount(player, true);
+        }
+
+        public sealed class SmartVanishController : FacepunchBehaviour
+        {
+            private BasePlayer _player;
+            private Vector3 _originalScale;
+            private float _nextNetworkGroupUpdate;
+
+            private void Awake()
+            {
+                _player = GetComponent<BasePlayer>();
+                if (_player == null) return;
+                _originalScale = _player.transform.localScale;
+                _player.transform.localScale = Vector3.zero;
+                _nextNetworkGroupUpdate = 0f;
+            }
+
+            private void FixedUpdate()
+            {
+                if (_player == null || Instance == null) return;
+                Instance.MaintainVanishMetabolism(_player);
+                if (Time.realtimeSinceStartup >= _nextNetworkGroupUpdate)
+                {
+                    _player.net.UpdateGroups(_player.transform.position);
+                    _nextNetworkGroupUpdate = Time.realtimeSinceStartup + 2f;
+                }
+                if (_player.serverInput != null && _player.serverInput.IsDown(BUTTON.RELOAD) &&
+                    !_player.serverInput.WasDown(BUTTON.RELOAD))
+                    Instance.HandleVanishInteraction(_player);
+            }
+
+            private void OnDestroy()
+            {
+                if (_player != null) _player.transform.localScale = _originalScale == Vector3.zero ? Vector3.one : _originalScale;
+            }
+        }
+
+        public void Disappear(BasePlayer player) { EnterVanish(player, false, true); }
+        public void Reappear(BasePlayer player) { ExitVanish(player, false, false, false); }
+        public bool IsInvisible(BasePlayer player) { return IsBuiltInVanished(player) || (player != null && player._limitedNetworking); }
+        public void _Disappear(BasePlayer player) { Disappear(player); }
+        public void _Reappear(BasePlayer player) { Reappear(player); }
+        public bool _IsInvisible(BasePlayer player) { return IsInvisible(player); }
+
+        #endregion
+
         #region Permissions, privacy, and filters
 
         private void RegisterPermissions()
@@ -1633,6 +2351,17 @@ namespace Oxide.Plugins
             permission.RegisterPermission(PermExtendedRange, this);
             permission.RegisterPermission(PermSeeVanished, this);
             permission.RegisterPermission(PermSeeOwners, this);
+            permission.RegisterPermission(PermVanish, this);
+            permission.RegisterPermission(PermVanishPermanent, this);
+            permission.RegisterPermission(PermVanishUnlock, this);
+            permission.RegisterPermission(PermVanishDamage, this);
+            permission.RegisterPermission(PermVanishInventory, this);
+            permission.RegisterPermission(PermVanishTeleport, this);
+        }
+
+        private bool HasExplicitPermission(BasePlayer player, string permissionName)
+        {
+            return player != null && permission.UserHasPermission(player.UserIDString, permissionName);
         }
 
         private bool HasPermission(BasePlayer player, string permissionName)
@@ -1676,31 +2405,8 @@ namespace Oxide.Plugins
             if (_vanishStateCache.TryGetValue(target.userID, out cached) && now < cached.ExpiresAt)
                 return cached.IsVanished;
 
-            bool isVanished = false;
-            if (Vanish != null)
-            {
-                try
-                {
-                    object result = Vanish.Call("_IsInvisible", target);
-                    if (result is bool) isVanished = (bool)result;
-                    else
-                    {
-                        result = Vanish.Call("IsInvisible", target);
-                        if (result is bool) isVanished = (bool)result;
-                        else isVanished = _config.Privacy.TreatLimitedNetworkingAsVanished && target._limitedNetworking;
-                    }
-                }
-                catch (Exception exception)
-                {
-                    isVanished = _config.Privacy.TreatLimitedNetworkingAsVanished && target._limitedNetworking;
-                    if (!_vanishApiWarningShown)
-                    {
-                        _vanishApiWarningShown = true;
-                        PrintWarning("Vanish compatibility call failed; limited networking fallback will be used. " + exception.Message);
-                    }
-                }
-            }
-            else isVanished = _config.Privacy.TreatLimitedNetworkingAsVanished && target._limitedNetworking;
+            bool isVanished = IsBuiltInVanished(target) ||
+                (_config.Privacy.TreatLimitedNetworkingAsVanished && target._limitedNetworking);
 
             _vanishStateCache[target.userID] = new VanishCacheEntry
             {
@@ -1873,6 +2579,72 @@ namespace Oxide.Plugins
             cached = "#" + ColorUtility.ToHtmlStringRGB(color);
             _teamColorCache[teamId] = cached;
             return cached;
+        }
+
+        #endregion
+
+        #region Vanish sound isolation patches
+
+        [HarmonyPatch(typeof(BaseNetworkable), "GetConnectionsWithin", typeof(Vector3), typeof(float), typeof(bool)), AutoPatch]
+        private static class GetConnectionsWithinPatch
+        {
+            [HarmonyPostfix]
+            private static void Postfix(ref List<Connection> __result, Vector3 position, float distance)
+            {
+                if (Instance == null || __result == null || Instance._vanishedPlayers.Count == 0) return;
+                float distanceSquared = distance * distance;
+                foreach (ulong userId in Instance._vanishedPlayers)
+                {
+                    BasePlayer player = BasePlayer.FindByID(userId);
+                    if (player == null || !player.IsConnected || player.Connection == null ||
+                        (player.transform.position - position).sqrMagnitude > distanceSquared)
+                        continue;
+                    bool exists = false;
+                    for (int i = 0; i < __result.Count; i++)
+                    {
+                        if (__result[i] == player.Connection)
+                        {
+                            exists = true;
+                            break;
+                        }
+                    }
+                    if (!exists) __result.Add(player.Connection);
+                }
+            }
+        }
+
+        [HarmonyPatch(typeof(BaseEntity), "SignalBroadcast", typeof(BaseEntity.Signal), typeof(string), typeof(Connection), typeof(string), typeof(float)), AutoPatch]
+        private static class SignalBroadcastPatch
+        {
+            [HarmonyPrefix]
+            private static bool Prefix([HarmonyArgument(2)] Connection sourceConnection)
+            {
+                return sourceConnection == null || Instance == null ||
+                    !Instance._vanishedPlayers.Contains(sourceConnection.userid);
+            }
+        }
+
+        [HarmonyPatch, AutoPatch]
+        private static class EffectNetworkSendPatch
+        {
+            [HarmonyTargetMethods]
+            private static IEnumerable<MethodBase> TargetMethods()
+            {
+                MethodInfo[] methods = typeof(EffectNetwork).GetMethods(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static);
+                for (int i = 0; i < methods.Length; i++)
+                {
+                    if (methods[i].Name != "Send") continue;
+                    ParameterInfo[] parameters = methods[i].GetParameters();
+                    if (parameters.Length > 0 && parameters[0].ParameterType == typeof(Effect)) yield return methods[i];
+                }
+            }
+
+            [HarmonyPrefix]
+            private static bool Prefix([HarmonyArgument(0)] Effect effect)
+            {
+                return effect == null || effect.source == 0 || Instance == null ||
+                    !Instance._vanishedPlayers.Contains(effect.source);
+            }
         }
 
         #endregion

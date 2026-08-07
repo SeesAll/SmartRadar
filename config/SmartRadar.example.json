@@ -53,8 +53,39 @@
   },
   "Vanish and owner privacy": {
     "Hide vanished players unless explicitly enabled and permitted": true,
-    "Treat Rust limited networking as vanished when the Vanish API is unavailable": true,
+    "Treat any Rust limited-networking player as vanished": true,
     "Mark visible vanished players with [V]": true,
     "Hide owners from moderators unless they have smartradar.seeowners": true
+  },
+  "Built-in vanish": {
+    "Command aliases": [
+      "vanish",
+      "v"
+    ],
+    "Inventory inspection command aliases": [
+      "inv",
+      "invspy"
+    ],
+    "Automatically vanish permitted administrators when they connect": false,
+    "Keep vanish enabled across disconnects and plugin reloads": true,
+    "Enable noclip when entering vanish": true,
+    "Pause and protect metabolism while vanished": true,
+    "Pause anti-hack checks while vanished": true,
+    "Prevent vanished administrators from receiving damage": true,
+    "Prevent vanished administrators from dealing damage without permission": true,
+    "Allow lock bypass with smartradar.vanish.unlock": true,
+    "Enable inventory inspection commands": true,
+    "Enable reload-key investigative interaction while vanished": true,
+    "Enable reload plus map-marker teleport with smartradar.vanish.teleport": false,
+    "Show Rust's native invisibility indicator": true,
+    "Show vanish chat notifications": true,
+    "Log vanish and reappear events": false
+  },
+  "Investigative vanish and radar workflow": {
+    "Automatically start radar when entering vanish": true,
+    "Automatically stop radar when leaving vanish": true,
+    "Use the administrator's saved radar mode and filters": true,
+    "Radar mode when saved preferences are not used": "players",
+    "Force player vision arrows on while vanish started radar": true
   }
 }
