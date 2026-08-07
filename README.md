@@ -46,7 +46,7 @@ Rust moderators and owners bypass normal SmartRadar permissions by default. This
 /radar help
 ```
 
-The default aliases are `/radar`, `/sradar`, and `/smartradar`.
+The default aliases are `/radar`, `/sradar`, and `/smartradar`. Every command shown below can use any of these aliases. Command aliases can also be changed in the configuration.
 
 ## Radar modes
 
@@ -59,27 +59,35 @@ The default aliases are `/radar`, `/sradar`, and `/smartradar`.
 
 ## Commands
 
-| Command | Description |
-| --- | --- |
-| `/radar` | Toggle SmartRadar using saved settings |
-| `/radar on` | Enable SmartRadar |
-| `/radar off` | Disable SmartRadar |
-| `/radar status` | Display the active and saved settings |
-| `/radar help` | Display command help |
-| `/radar reset` | Restore the user's settings to defaults |
-| `/radar <players\|stashes\|tcs\|all> [distance] [rate]` | Select a mode with optional distance and refresh rate |
-| `/radar mode <mode>` | Change the current mode |
-| `/radar distance <meters>` | Change the search distance |
-| `/radar rate <seconds>` | Change the player refresh rate |
-| `/radar for <seconds>` | Enable radar temporarily or apply an expiry to the current session |
-| `/radar arrows [on\|off]` | Toggle player vision arrows |
-| `/radar voice [on\|off]` | Toggle recent voice-activity indicators |
-| `/radar sleepers [on\|off]` | Toggle sleeping players |
-| `/radar vanished [on\|off]` | Toggle vanished players when permitted |
-| `/radar filter name <text\|off>` | Filter players by a partial display name |
-| `/radar filter team <all\|mine\|others\|solo>` | Filter players by team relationship |
-| `/radar filter auth <all\|players\|staff\|moderators\|owners>` | Filter players by Rust authorization level |
-| `/radar filter safezone <all\|inside\|outside>` | Filter players by safe-zone state |
+All commands require `smartradar.use`. Commands that display or enable a particular type of information also require the corresponding feature permission shown below. With the default configuration, Rust moderators and owners bypass ordinary permissions; see [Permissions](#permissions) for the privacy exceptions.
+
+| Command | What it does | Additional permission |
+| --- | --- | --- |
+| `/radar` | Toggles SmartRadar on or off using the user's saved mode and settings. | Permission for the saved mode |
+| `/radar on` | Starts SmartRadar using the user's saved mode and settings. | Permission for the saved mode |
+| `/radar off` | Stops the user's active radar session. | None |
+| `/radar status` | Reports whether radar is active and displays its mode, distance, refresh rate, toggles, filters, and remaining temporary duration. | None |
+| `/radar help` | Displays the built-in command summary. | None |
+| `/radar reset` | Restores the user's saved preferences to configured defaults. If the default mode is not permitted, the first permitted mode is selected instead. | At least one mode permission |
+| `/radar <players\|stashes\|tcs\|all> [distance] [rate]` | Selects a mode, optionally changes distance and refresh rate, and starts radar immediately. | Permission for every feature in the selected mode |
+| `/radar mode <players\|stashes\|tcs\|all>` | Changes the saved mode and the active session's mode, if running. It does not start radar by itself. | Permission for every feature in the selected mode |
+| `/radar distance <meters>` | Changes the saved search radius and the active session's radius, subject to the permitted maximum. | `smartradar.extendedrange` only when exceeding the standard maximum |
+| `/radar rate <seconds>` | Changes the saved refresh interval and the active session's interval, within configured limits. Static radar updates still respect the configured static minimum. | None |
+| `/radar for <seconds>` | Starts radar if necessary and sets it to stop automatically after the specified duration. | Permission for the saved mode |
+| `/radar arrows [on\|off]` | Toggles fixed-length viewing-direction arrows for player targets. Omitting the value toggles the current setting. | `smartradar.arrows` |
+| `/radar voice [on\|off]` | Toggles indicators for players who spoke recently. Omitting the value toggles the current setting. | `smartradar.voice` |
+| `/radar sleepers [on\|off]` | Toggles sleeping-player targets in player radar. Omitting the value toggles the current setting. | `smartradar.sleepers` |
+| `/radar vanished [on\|off]` | Toggles targets that SmartRadar identifies as vanished. Vanished targets remain hidden unless this is enabled and the viewer is permitted to see them. | `smartradar.seevanished` |
+| `/radar filter name <text\|off>` | Shows only players whose display name contains the supplied text; `off` clears the name filter. Multiple-word text is supported. | None |
+| `/radar filter team <all\|mine\|others\|solo>` | Shows all players, the viewer's teammates, non-teammates, or players with no team. | None |
+| `/radar filter auth <all\|players\|staff\|moderators\|owners>` | Filters targets by Rust authorization level: regular players, all staff, moderators, or owners. | None |
+| `/radar filter safezone <all\|inside\|outside>` | Shows all players or only targets inside or outside safe zones. | None |
+
+The `players`, `stashes`, and `tcs` modes require `smartradar.players`, `smartradar.stashes`, and `smartradar.cupboards`, respectively. The `all` mode requires all three permissions. Accepted mode synonyms include `player`, `stash`, `tc`, `cupboard`, and their plural forms.
+
+For toggle commands, `true`, `1`, and `toggle` are accepted in addition to `on`; `false` and `0` are accepted in addition to `off`.
+
+Filter aliases are also accepted: `team` for `mine`; `other` for `others`; `noteam` for `solo`; `player` for `players`; `admins` for `staff`; `moderator` or `mods` for `moderators`; `owner` for `owners`; and `in` or `out` for the corresponding safe-zone filters.
 
 Legacy Simple Radar syntax is also supported:
 
@@ -91,18 +99,20 @@ All numeric input is validated. Negative, zero, NaN, infinite, out-of-range, or 
 
 ## Permissions
 
-| Permission | Purpose |
+Possessing a feature permission does not grant command access on its own; a user must also have `smartradar.use`. Mode permissions control which target categories can be selected, while optional feature permissions control the extra information that may be enabled.
+
+| Permission | What it grants |
 | --- | --- |
-| `smartradar.use` | Base permission required to control SmartRadar |
-| `smartradar.players` | Use player radar |
-| `smartradar.stashes` | Use stash radar |
-| `smartradar.cupboards` | Use tool-cupboard radar |
-| `smartradar.arrows` | Display player vision arrows |
-| `smartradar.voice` | Display voice-activity indicators |
-| `smartradar.sleepers` | Include sleeping players |
-| `smartradar.extendedrange` | Use distances beyond the standard maximum |
-| `smartradar.seevanished` | Explicitly display vanished players |
-| `smartradar.seeowners` | Allow a moderator to display owner-level players |
+| `smartradar.use` | Access to the `/radar`, `/sradar`, and `/smartradar` command aliases. It does not grant access to any target category by itself. |
+| `smartradar.players` | Permission to select player radar and include players in `all` mode. |
+| `smartradar.stashes` | Permission to select stash radar and include hidden or exposed stashes in `all` mode. |
+| `smartradar.cupboards` | Permission to select tool-cupboard radar and include cupboards in `all` mode. The command name for this mode is `tcs`. |
+| `smartradar.arrows` | Permission to enable fixed-length viewing-direction arrows on player targets. |
+| `smartradar.voice` | Permission to enable recent voice-activity indicators on player targets. |
+| `smartradar.sleepers` | Permission to include sleeping players in player or `all` radar. |
+| `smartradar.extendedrange` | Permission to select distances above the configured standard maximum, up to the configured extended maximum. It does not grant a radar mode. |
+| `smartradar.seevanished` | Permission to enable and display vanished-player targets. This is a privacy-sensitive permission with stricter administrator-bypass rules. |
+| `smartradar.seeowners` | Permission for a moderator to display owner-level targets when owner hiding is enabled. This is a privacy-sensitive permission with stricter administrator-bypass rules. |
 
 Example Oxide grants:
 
