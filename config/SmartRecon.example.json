@@ -111,8 +111,8 @@
   "Investigation user interface": {
     "Enabled": true,
     "Show automatically when radar starts": true,
-    "Anchor minimum": "0.835 0.305",
-    "Anchor maximum": "0.985 0.695",
+    "Anchor minimum": "0.845 0.3225",
+    "Anchor maximum": "0.985 0.6775",
     "Panel color": "0.035 0.045 0.055 0.94",
     "Accent color": "0.10 0.78 0.72 1.0",
     "Enabled button color": "0.08 0.62 0.56 0.95",

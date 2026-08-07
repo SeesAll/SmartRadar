@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [2.1.2] - 2026-08-07
+
+### Changed
+
+- Tightened button height, row spacing, column spacing, and footer placement while retaining aligned, consistently sized controls.
+- Reduced the panel slightly further to roughly 14% × 35.5% of the screen without reducing the readable 9-point button text.
+- Both earlier default layouts upgrade automatically; custom UI anchors remain untouched.
+
 ## [2.1.1] - 2026-08-07
 
 ### Changed
@@ -273,7 +281,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Dynamic voice-hook subscription and idle player-index suspension.
 - Configuration validation, localization, safe lifecycle cleanup, and corrupt-data recovery.
 
-[Unreleased]: https://github.com/SeesAll/SmartRecon/compare/2.1.1...HEAD
+[Unreleased]: https://github.com/SeesAll/SmartRecon/compare/2.1.2...HEAD
+[2.1.2]: https://github.com/SeesAll/SmartRecon/compare/2.1.1...2.1.2
 [2.1.1]: https://github.com/SeesAll/SmartRecon/compare/2.1.0...2.1.1
 [2.1.0]: https://github.com/SeesAll/SmartRecon/compare/2.0.6...2.1.0
 [2.0.6]: https://github.com/SeesAll/SmartRecon/compare/2.0.5...2.0.6

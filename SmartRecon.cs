@@ -19,7 +19,7 @@ using UnityEngine;
 
 namespace Oxide.Plugins
 {
-    [Info("SmartRecon", "SeesAll", "2.1.1")]
+    [Info("SmartRecon", "SeesAll", "2.1.2")]
     [Description("Unified administrative reconnaissance, vanish, radar, inspection, and rapid movement for Rust")]
     public class SmartRecon : RustPlugin
     {
@@ -53,10 +53,12 @@ namespace Oxide.Plugins
         private const string ModeAll = "all";
         private const string ModeCustom = "custom";
         private const string RadarUiName = "SmartRecon.InvestigationUI";
-        private const string DefaultUiAnchorMin = "0.835 0.305";
-        private const string DefaultUiAnchorMax = "0.985 0.695";
-        private const string PreviousDefaultUiAnchorMin = "0.815 0.275";
-        private const string PreviousDefaultUiAnchorMax = "0.985 0.725";
+        private const string DefaultUiAnchorMin = "0.845 0.3225";
+        private const string DefaultUiAnchorMax = "0.985 0.6775";
+        private const string PreviousDefaultUiAnchorMin = "0.835 0.305";
+        private const string PreviousDefaultUiAnchorMax = "0.985 0.695";
+        private const string OriginalDefaultUiAnchorMin = "0.815 0.275";
+        private const string OriginalDefaultUiAnchorMax = "0.985 0.725";
 
         #endregion
 
@@ -503,8 +505,13 @@ namespace Oxide.Plugins
             if (_config.Investigation == null) _config.Investigation = new InvestigationSettings();
             if (_config.UserInterface == null) _config.UserInterface = new UserInterfaceSettings();
 
-            if (string.Equals(_config.UserInterface.AnchorMin, PreviousDefaultUiAnchorMin, StringComparison.Ordinal) &&
-                string.Equals(_config.UserInterface.AnchorMax, PreviousDefaultUiAnchorMax, StringComparison.Ordinal))
+            bool usesPreviousDefaultAnchors =
+                string.Equals(_config.UserInterface.AnchorMin, PreviousDefaultUiAnchorMin, StringComparison.Ordinal) &&
+                string.Equals(_config.UserInterface.AnchorMax, PreviousDefaultUiAnchorMax, StringComparison.Ordinal);
+            bool usesOriginalDefaultAnchors =
+                string.Equals(_config.UserInterface.AnchorMin, OriginalDefaultUiAnchorMin, StringComparison.Ordinal) &&
+                string.Equals(_config.UserInterface.AnchorMax, OriginalDefaultUiAnchorMax, StringComparison.Ordinal);
+            if (usesPreviousDefaultAnchors || usesOriginalDefaultAnchors)
             {
                 _config.UserInterface.AnchorMin = DefaultUiAnchorMin;
                 _config.UserInterface.AnchorMax = DefaultUiAnchorMax;
@@ -1502,7 +1509,7 @@ namespace Oxide.Plugins
             elements.Add(new CuiLabel
             {
                 Text = { Text = spectating ? "Click controls • × closes • /radar ui reopens" : "Open inventory to click • /radar ui hides panel", FontSize = 8, Align = TextAnchor.MiddleCenter, Color = "0.62 0.68 0.72 1" },
-                RectTransform = { AnchorMin = "0.04 0.015", AnchorMax = "0.96 0.095" }
+                RectTransform = { AnchorMin = "0.04 0.02", AnchorMax = "0.96 0.12" }
             }, RadarUiName);
             CuiHelper.AddUi(player, elements);
             session.UiVisible = true;
@@ -1510,12 +1517,12 @@ namespace Oxide.Plugins
 
         private static void AddUiToggle(CuiElementContainer elements, string label, string action, bool enabled, int row, int column, UserInterfaceSettings settings)
         {
-            const float top = 0.80f;
-            const float rowHeight = 0.13f;
+            const float top = 0.79f;
+            const float rowHeight = 0.122f;
             float yMax = top - row * rowHeight;
-            float yMin = yMax - 0.095f;
-            float xMin = column == 0 ? 0.05f : 0.515f;
-            float xMax = column == 0 ? 0.485f : 0.95f;
+            float yMin = yMax - 0.09f;
+            float xMin = column == 0 ? 0.05f : 0.51f;
+            float xMax = column == 0 ? 0.49f : 0.95f;
             elements.Add(new CuiButton
             {
                 Button = { Color = enabled ? settings.EnabledColor : settings.DisabledColor, Command = "smartrecon.ui " + action },
