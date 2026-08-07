@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [2.1.3] - 2026-08-07
+
+### Changed
+
+- Halved the panel's right-edge margin from 1.5% to 0.75% of screen width without changing panel size, vertical position, or control spacing.
+- All earlier default layouts upgrade automatically; custom UI anchors remain untouched.
+
 ## [2.1.2] - 2026-08-07
 
 ### Changed
@@ -281,7 +288,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Dynamic voice-hook subscription and idle player-index suspension.
 - Configuration validation, localization, safe lifecycle cleanup, and corrupt-data recovery.
 
-[Unreleased]: https://github.com/SeesAll/SmartRecon/compare/2.1.2...HEAD
+[Unreleased]: https://github.com/SeesAll/SmartRecon/compare/2.1.3...HEAD
+[2.1.3]: https://github.com/SeesAll/SmartRecon/compare/2.1.2...2.1.3
 [2.1.2]: https://github.com/SeesAll/SmartRecon/compare/2.1.1...2.1.2
 [2.1.1]: https://github.com/SeesAll/SmartRecon/compare/2.1.0...2.1.1
 [2.1.0]: https://github.com/SeesAll/SmartRecon/compare/2.0.6...2.1.0

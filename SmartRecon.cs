@@ -19,7 +19,7 @@ using UnityEngine;
 
 namespace Oxide.Plugins
 {
-    [Info("SmartRecon", "SeesAll", "2.1.2")]
+    [Info("SmartRecon", "SeesAll", "2.1.3")]
     [Description("Unified administrative reconnaissance, vanish, radar, inspection, and rapid movement for Rust")]
     public class SmartRecon : RustPlugin
     {
@@ -53,10 +53,12 @@ namespace Oxide.Plugins
         private const string ModeAll = "all";
         private const string ModeCustom = "custom";
         private const string RadarUiName = "SmartRecon.InvestigationUI";
-        private const string DefaultUiAnchorMin = "0.845 0.3225";
-        private const string DefaultUiAnchorMax = "0.985 0.6775";
-        private const string PreviousDefaultUiAnchorMin = "0.835 0.305";
-        private const string PreviousDefaultUiAnchorMax = "0.985 0.695";
+        private const string DefaultUiAnchorMin = "0.8525 0.3225";
+        private const string DefaultUiAnchorMax = "0.9925 0.6775";
+        private const string PreviousDefaultUiAnchorMin = "0.845 0.3225";
+        private const string PreviousDefaultUiAnchorMax = "0.985 0.6775";
+        private const string IntermediateDefaultUiAnchorMin = "0.835 0.305";
+        private const string IntermediateDefaultUiAnchorMax = "0.985 0.695";
         private const string OriginalDefaultUiAnchorMin = "0.815 0.275";
         private const string OriginalDefaultUiAnchorMax = "0.985 0.725";
 
@@ -508,10 +510,13 @@ namespace Oxide.Plugins
             bool usesPreviousDefaultAnchors =
                 string.Equals(_config.UserInterface.AnchorMin, PreviousDefaultUiAnchorMin, StringComparison.Ordinal) &&
                 string.Equals(_config.UserInterface.AnchorMax, PreviousDefaultUiAnchorMax, StringComparison.Ordinal);
+            bool usesIntermediateDefaultAnchors =
+                string.Equals(_config.UserInterface.AnchorMin, IntermediateDefaultUiAnchorMin, StringComparison.Ordinal) &&
+                string.Equals(_config.UserInterface.AnchorMax, IntermediateDefaultUiAnchorMax, StringComparison.Ordinal);
             bool usesOriginalDefaultAnchors =
                 string.Equals(_config.UserInterface.AnchorMin, OriginalDefaultUiAnchorMin, StringComparison.Ordinal) &&
                 string.Equals(_config.UserInterface.AnchorMax, OriginalDefaultUiAnchorMax, StringComparison.Ordinal);
-            if (usesPreviousDefaultAnchors || usesOriginalDefaultAnchors)
+            if (usesPreviousDefaultAnchors || usesIntermediateDefaultAnchors || usesOriginalDefaultAnchors)
             {
                 _config.UserInterface.AnchorMin = DefaultUiAnchorMin;
                 _config.UserInterface.AnchorMax = DefaultUiAnchorMax;
