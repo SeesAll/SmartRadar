@@ -1,0 +1,17 @@
+# Build and editor artifacts
+.vs/
+.idea/
+.vscode/
+bin/
+obj/
+*.dll
+*.pdb
+*.user
+
+# Generated server files
+oxide/config/SmartRadar.json
+oxide/data/SmartRadar.json
+oxide/logs/
+carbon/configs/SmartRadar.json
+carbon/data/SmartRadar.json
+carbon/logs/

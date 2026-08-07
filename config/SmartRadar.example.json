@@ -1,0 +1,60 @@
+{
+  "General settings": {
+    "Command aliases": [
+      "radar",
+      "sradar",
+      "smartradar"
+    ],
+    "Rust moderators and owners bypass SmartRadar permissions": true,
+    "Persist each administrator's last settings": true,
+    "Log radar start and stop events": false,
+    "Default mode (players, stashes, tcs, all)": "players",
+    "Default distance": 250.0,
+    "Default refresh rate in seconds": 1.0,
+    "Minimum refresh rate in seconds": 0.5,
+    "Maximum refresh rate in seconds": 30.0,
+    "Maximum standard distance": 250.0,
+    "Maximum distance with smartradar.extendedrange": 1000.0,
+    "Maximum temporary radar duration in seconds": 86400.0
+  },
+  "Scheduler and spatial index": {
+    "Scheduler tick interval in seconds": 0.1,
+    "Maximum radar sessions updated per scheduler tick": 4,
+    "Active player spatial index refresh in seconds": 0.25,
+    "Sleeping player spatial index refresh in seconds": 5.0,
+    "Full static entity index rebuild in seconds": 1800.0,
+    "Spatial cell size in meters": 100.0,
+    "Minimum stash and cupboard refresh in seconds": 2.0,
+    "Extra drawing lifetime in seconds": 0.2
+  },
+  "Result limits": {
+    "Maximum player labels per update": 100,
+    "Maximum stash labels per update": 75,
+    "Maximum cupboard labels per update": 75,
+    "Maximum total draw commands per session cycle": 180
+  },
+  "Display settings": {
+    "Enable player vision arrows by default": false,
+    "Enable voice indicators by default": false,
+    "Include sleepers by default": false,
+    "Include NPC players": true,
+    "Voice indicator duration in seconds": 2.0,
+    "Player label vertical offset": 2.0,
+    "Static entity label vertical offset": 0.5,
+    "Vision arrow length": 3.0,
+    "Vision arrow head radius": 0.12,
+    "Use distance fade for parented drawings": true,
+    "Depth test parented drawings": false,
+    "Player label scale": 1.0,
+    "Player drawing color": "#FFFFFF",
+    "Stash drawing color": "#E642F5",
+    "Cupboard drawing color": "#05F5E5",
+    "Vision arrow color": "#FFFFFF"
+  },
+  "Vanish and owner privacy": {
+    "Hide vanished players unless explicitly enabled and permitted": true,
+    "Treat Rust limited networking as vanished when the Vanish API is unavailable": true,
+    "Mark visible vanished players with [V]": true,
+    "Hide owners from moderators unless they have smartradar.seeowners": true
+  }
+}
