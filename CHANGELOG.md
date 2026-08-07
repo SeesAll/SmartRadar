@@ -64,6 +64,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Dynamic voice-hook subscription and idle player-index suspension.
 - Configuration validation, localization, safe lifecycle cleanup, and corrupt-data recovery.
 
-[Unreleased]: https://github.com/SeesAll/SmartRadar/compare/v1.1.0...HEAD
-[1.1.0]: https://github.com/SeesAll/SmartRadar/compare/v1.0.0...v1.1.0
-[1.0.0]: https://github.com/SeesAll/SmartRadar/releases/tag/v1.0.0
+[Unreleased]: https://github.com/SeesAll/SmartRadar/compare/1.1.0...HEAD
+[1.1.0]: https://github.com/SeesAll/SmartRadar/compare/1.0.0...1.1.0
+[1.0.0]: https://github.com/SeesAll/SmartRadar/releases/tag/1.0.0
