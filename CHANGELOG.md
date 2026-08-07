@@ -6,6 +6,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [2.0.5] - 2026-08-07
+
+### Fixed
+
+- Added a spectator-safe world-space drawing path for player labels, vision arrows, and TC-link arrows, avoiding entity parenting and distance fading that can cull drawings relative to the inactive spectator body.
+- Added a lightweight twice-per-second spectate-state reconciliation pass so automatic radar activation and cleanup do not depend solely on hook timing.
+- Spectating administrators with an existing radar session now receive the same temporary Players-layer and vision-arrow defaults without restarting their saved profile.
+- The watched player remains in spectate radar results so their own label and viewing-direction arrow are visible even when no other players are nearby.
+- Forced spectate Players-layer state is now honored by candidate filtering even when the administrator's saved radar profile had Players disabled.
+- Saved player filters no longer suppress the watched player's own label and vision arrow during native spectating; nearby targets continue respecting those filters.
+- All other radar categories continue using their existing world-space drawings centered on the watched player.
+
 ## [2.0.4] - 2026-08-07
 
 ### Added
@@ -231,7 +243,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Dynamic voice-hook subscription and idle player-index suspension.
 - Configuration validation, localization, safe lifecycle cleanup, and corrupt-data recovery.
 
-[Unreleased]: https://github.com/SeesAll/SmartRecon/compare/2.0.4...HEAD
+[Unreleased]: https://github.com/SeesAll/SmartRecon/compare/2.0.5...HEAD
+[2.0.5]: https://github.com/SeesAll/SmartRecon/compare/2.0.4...2.0.5
 [2.0.4]: https://github.com/SeesAll/SmartRecon/compare/2.0.3...2.0.4
 [2.0.3]: https://github.com/SeesAll/SmartRecon/compare/2.0.2...2.0.3
 [2.0.2]: https://github.com/SeesAll/SmartRecon/compare/2.0.1...2.0.2

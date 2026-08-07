@@ -21,7 +21,7 @@ using UnityEngine;
 
 namespace Oxide.Plugins
 {
-    [Info("SmartRecon", "SeesAll", "2.0.4")]
+    [Info("SmartRecon", "SeesAll", "2.0.5")]
     [Description("Unified administrative reconnaissance, vanish, radar, inspection, and rapid movement for Rust")]
     public class SmartRecon : RustPlugin
     {
@@ -103,6 +103,7 @@ namespace Oxide.Plugins
         private float _nextSleeperIndexRebuild;
         private float _nextStaticIndexRebuild;
         private float _nextVoicePrune;
+        private float _nextSpectateReconcile;
         private int _staggerSequence;
         private int _voiceWatcherCount;
         private int _vanishFeedbackEffectDepth;
@@ -872,6 +873,7 @@ namespace Oxide.Plugins
             _nextSleeperIndexRebuild = now + _config.Scheduler.SleeperIndexRefresh;
             _nextStaticIndexRebuild = now + _config.Scheduler.StaticIndexRebuild;
             _nextVoicePrune = now + 10f;
+            _nextSpectateReconcile = now;
             timer.Every(_config.Scheduler.TickInterval, SchedulerTick);
 
             foreach (BasePlayer player in BasePlayer.activePlayerList)
@@ -1950,13 +1952,7 @@ namespace Oxide.Plugins
             session.StartedBySpectate = false;
             session.ForcedPlayersLayer = false;
             session.ForcedArrows = false;
-            if (player.IsSpectating())
-            {
-                session.StartedBySpectate = true;
-                session.ForcedArrows = _config.Investigation.ForceVisionArrowsOnSpectate &&
-                    HasPermission(player, PermArrows) && HasPermission(player, PermPlayers);
-                session.ForcedPlayersLayer = session.ForcedArrows && !LayerPlayers(preferences);
-            }
+            if (player.IsSpectating()) ApplySpectateSessionDefaults(player, session);
             if (HasPlayerLayers(preferences)) _nextPlayerIndexRebuild = 0f;
             if (session.ForcedPlayersLayer) _nextPlayerIndexRebuild = 0f;
             if (preferences.ShowSleepers) _nextSleeperIndexRebuild = 0f;
@@ -2034,6 +2030,8 @@ namespace Oxide.Plugins
         {
             if (!_serverInitialized) return;
             float now = Time.realtimeSinceStartup;
+
+            ReconcileSpectateSessions(now);
 
             bool needsPlayerIndex = HasPlayerRadarSessions();
             bool needsSleeperIndex = needsPlayerIndex && HasSleeperRadarSessions();
@@ -2441,15 +2439,20 @@ namespace Oxide.Plugins
             Vector3 origin = spectatingTarget != null && spectatingTarget.IsConnected
                 ? spectatingTarget.transform.position
                 : viewer.transform.position;
-            ulong ignoredTargetId = spectatingTarget != null ? spectatingTarget.userID : viewer.userID;
+            // Keep the watched player in spectate results so their own vision arrow remains visible.
+            // Only the administrator's entity is excluded, matching normal radar behavior.
+            ulong ignoredTargetId = viewer.userID;
+            ulong watchedTargetId = spectatingTarget != null ? spectatingTarget.userID : 0UL;
             float radiusSqr = preferences.Distance * preferences.Distance;
             int minX, maxX, minZ, maxZ;
             GetCellBounds(origin, preferences.Distance, out minX, out maxX, out minZ, out maxZ);
 
-            CollectPlayerCandidates(_activePlayerIndex, viewer, preferences, origin, radiusSqr, false, ignoredTargetId, minX, maxX, minZ, maxZ);
+            CollectPlayerCandidates(_activePlayerIndex, viewer, preferences, origin, radiusSqr, false,
+                session.ForcedPlayersLayer, ignoredTargetId, watchedTargetId, minX, maxX, minZ, maxZ);
             if ((LayerPlayers(preferences) || session.ForcedPlayersLayer) && preferences.ShowSleepers &&
                 HasPermission(viewer, PermSleepers))
-                CollectPlayerCandidates(_sleepingPlayerIndex, viewer, preferences, origin, radiusSqr, true, ignoredTargetId, minX, maxX, minZ, maxZ);
+                CollectPlayerCandidates(_sleepingPlayerIndex, viewer, preferences, origin, radiusSqr, true,
+                    session.ForcedPlayersLayer, ignoredTargetId, watchedTargetId, minX, maxX, minZ, maxZ);
 
             _playerCandidates.Sort(ComparePlayerCandidates);
             int maximum = Mathf.Min(_config.Limits.MaximumPlayers, _playerCandidates.Count);
@@ -2472,8 +2475,16 @@ namespace Oxide.Plugins
                 }
 
                 Vector3 localLabelPosition = target.transform.InverseTransformPoint(target.transform.position + Vector3.up * _config.Display.PlayerLabelHeight);
-                viewer.SendConsoleCommand("ddraw.text", lifetime, _playerDrawColor, localLabelPosition, label,
-                    _config.Display.DistanceFade, _config.Display.DepthTest, _config.Display.PlayerLabelScale, target.net.ID);
+                if (spectatingTarget != null)
+                {
+                    Vector3 worldLabelPosition = target.transform.position + Vector3.up * _config.Display.PlayerLabelHeight;
+                    viewer.SendConsoleCommand("ddraw.text", lifetime, _playerDrawColor, worldLabelPosition, label);
+                }
+                else
+                {
+                    viewer.SendConsoleCommand("ddraw.text", lifetime, _playerDrawColor, localLabelPosition, label,
+                        _config.Display.DistanceFade, _config.Display.DepthTest, _config.Display.PlayerLabelScale, target.net.ID);
+                }
                 draws++;
 
                 if ((preferences.ShowArrows || session.ForcedArrows) && HasPermission(viewer, PermArrows) && draws < budget)
@@ -2484,13 +2495,18 @@ namespace Oxide.Plugins
 
                     // Player-root rotation can differ between server and client, so parenting a locally
                     // transformed eye ray can reverse it. Keep authoritative eye-ray coordinates in world space.
-                    viewer.SendConsoleCommand("ddraw.arrow", lifetime, _arrowDrawColor, startWorld, endWorld,
-                        _config.Display.ArrowHeadRadius, _config.Display.DistanceFade, _config.Display.DepthTest);
+                    if (spectatingTarget != null)
+                        viewer.SendConsoleCommand("ddraw.arrow", lifetime, _arrowDrawColor, startWorld, endWorld,
+                            _config.Display.ArrowHeadRadius);
+                    else
+                        viewer.SendConsoleCommand("ddraw.arrow", lifetime, _arrowDrawColor, startWorld, endWorld,
+                            _config.Display.ArrowHeadRadius, _config.Display.DistanceFade, _config.Display.DepthTest);
                     draws++;
                 }
 
                 if (preferences.ShowTcLinks && HasPermission(viewer, PermTcInfo) && draws < budget)
-                    draws += DrawNearestAuthorizedCupboardLink(viewer, target, lifetime, budget - draws);
+                    draws += DrawNearestAuthorizedCupboardLink(viewer, target, lifetime, budget - draws,
+                        spectatingTarget != null);
             }
 
             if (LayerNpcs(preferences) && HasPermission(viewer, PermNpcs) && draws < budget)
@@ -2549,7 +2565,8 @@ namespace Oxide.Plugins
         }
 
         private void CollectPlayerCandidates(Dictionary<long, List<BasePlayer>> index, BasePlayer viewer, RadarPreferences preferences,
-            Vector3 origin, float radiusSqr, bool sleeping, ulong ignoredTargetId, int minX, int maxX, int minZ, int maxZ)
+            Vector3 origin, float radiusSqr, bool sleeping, bool forcedPlayersLayer, ulong ignoredTargetId,
+            ulong watchedTargetId, int minX, int maxX, int minZ, int maxZ)
         {
             for (int x = minX; x <= maxX; x++)
             {
@@ -2560,7 +2577,8 @@ namespace Oxide.Plugins
                     for (int i = 0; i < players.Count; i++)
                     {
                         BasePlayer target = players[i];
-                        if (!ShouldIncludePlayer(viewer, target, preferences, sleeping, ignoredTargetId)) continue;
+                        if (!ShouldIncludePlayer(viewer, target, preferences, sleeping, forcedPlayersLayer,
+                                ignoredTargetId, watchedTargetId)) continue;
                         float sqrDistance = (target.transform.position - origin).sqrMagnitude;
                         if (sqrDistance > radiusSqr) continue;
 
@@ -2582,7 +2600,8 @@ namespace Oxide.Plugins
             }
         }
 
-        private bool ShouldIncludePlayer(BasePlayer viewer, BasePlayer target, RadarPreferences preferences, bool sleeping, ulong ignoredTargetId)
+        private bool ShouldIncludePlayer(BasePlayer viewer, BasePlayer target, RadarPreferences preferences, bool sleeping,
+            bool forcedPlayersLayer, ulong ignoredTargetId, ulong watchedTargetId)
         {
             if (target == null || target.userID == viewer.userID || target.userID == ignoredTargetId) return false;
             if (!sleeping && !target.IsConnected && !IsHumanoidNpc(target)) return false;
@@ -2591,7 +2610,11 @@ namespace Oxide.Plugins
             {
                 if (!_config.Display.IncludeNpcPlayers || !LayerNpcs(preferences) || !HasPermission(viewer, PermNpcs)) return false;
             }
-            else if (!LayerPlayers(preferences) || !HasPermission(viewer, PermPlayers)) return false;
+            else if ((!LayerPlayers(preferences) && !forcedPlayersLayer) || !HasPermission(viewer, PermPlayers)) return false;
+
+            // The watched player anchors native spectating and must retain their vision arrow even
+            // when a saved name, team, authorization, or safe-zone filter would hide other targets.
+            if (watchedTargetId != 0UL && target.userID == watchedTargetId) return true;
 
             if (!string.IsNullOrEmpty(preferences.NameFilter) &&
                 target.displayName.IndexOf(preferences.NameFilter, StringComparison.OrdinalIgnoreCase) < 0)
@@ -2777,7 +2800,8 @@ namespace Oxide.Plugins
             return draws;
         }
 
-        private int DrawNearestAuthorizedCupboardLink(BasePlayer viewer, BasePlayer target, float lifetime, int budget)
+        private int DrawNearestAuthorizedCupboardLink(BasePlayer viewer, BasePlayer target, float lifetime, int budget,
+            bool spectatorSafe)
         {
             if (budget <= 0 || target == null) return 0;
             _cupboardCandidates.Clear();
@@ -2787,9 +2811,14 @@ namespace Oxide.Plugins
             {
                 BuildingPrivlidge cupboard = _cupboardCandidates[i].Entity;
                 if (cupboard == null || cupboard.IsDestroyed || !cupboard.IsAuthed(target)) continue;
-                viewer.SendConsoleCommand("ddraw.arrow", lifetime, _cupboardDrawColor,
-                    target.transform.position + Vector3.up, cupboard.transform.position + Vector3.up,
-                    _config.Display.ArrowHeadRadius, _config.Display.DistanceFade, _config.Display.DepthTest);
+                if (spectatorSafe)
+                    viewer.SendConsoleCommand("ddraw.arrow", lifetime, _cupboardDrawColor,
+                        target.transform.position + Vector3.up, cupboard.transform.position + Vector3.up,
+                        _config.Display.ArrowHeadRadius);
+                else
+                    viewer.SendConsoleCommand("ddraw.arrow", lifetime, _cupboardDrawColor,
+                        target.transform.position + Vector3.up, cupboard.transform.position + Vector3.up,
+                        _config.Display.ArrowHeadRadius, _config.Display.DistanceFade, _config.Display.DepthTest);
                 return 1;
             }
             return 0;
@@ -3160,8 +3189,68 @@ namespace Oxide.Plugins
             RadarSession session;
             if (!TryStartAutomaticRadar(player, _config.Investigation.StartRadarOnSpectate,
                     _config.Investigation.ForceVisionArrowsOnSpectate, out session)) return false;
-            session.StartedBySpectate = true;
+            ApplySpectateSessionDefaults(player, session);
             return true;
+        }
+
+        private void ApplySpectateSessionDefaults(BasePlayer player, RadarSession session)
+        {
+            if (player == null || session == null) return;
+            session.StartedBySpectate = true;
+            session.ForcedArrows = _config.Investigation.ForceVisionArrowsOnSpectate &&
+                HasPermission(player, PermArrows) && HasPermission(player, PermPlayers);
+            session.ForcedPlayersLayer = session.ForcedArrows && !LayerPlayers(session.Preferences);
+            session.NextPlayerUpdate = 0f;
+            session.NextStaticUpdate = 0f;
+            if (session.ForcedPlayersLayer) _nextPlayerIndexRebuild = 0f;
+            if (_config.UserInterface.ShowOnRadarStart) ShowRadarUi(player, session);
+        }
+
+        private void ReconcileSpectateSessions(float now)
+        {
+            if (now < _nextSpectateReconcile) return;
+            _nextSpectateReconcile = now + 0.5f;
+
+            foreach (BasePlayer player in BasePlayer.activePlayerList)
+            {
+                if (player == null || !player.IsConnected || !player.IsSpectating()) continue;
+
+                if (IsBuiltInVanished(player))
+                    ExitVanish(player, false, false, true, true, false);
+
+                RadarSession session;
+                if (_sessions.TryGetValue(player.userID, out session) && session != null)
+                {
+                    if (!session.StartedBySpectate) ApplySpectateSessionDefaults(player, session);
+                    continue;
+                }
+
+                StartSpectateRadar(player);
+            }
+
+            _sessionRemovalBuffer.Clear();
+            foreach (KeyValuePair<ulong, RadarSession> pair in _sessions)
+            {
+                RadarSession session = pair.Value;
+                if (session == null || !session.StartedBySpectate ||
+                    (session.Viewer != null && session.Viewer.IsConnected && session.Viewer.IsSpectating())) continue;
+                _sessionRemovalBuffer.Add(pair.Key);
+            }
+
+            for (int i = 0; i < _sessionRemovalBuffer.Count; i++)
+            {
+                RadarSession session;
+                if (!_sessions.TryGetValue(_sessionRemovalBuffer[i], out session) || session == null) continue;
+                if (_config.Investigation.StopRadarOnSpectateEnd)
+                    StopRadar(session.Viewer, false);
+                else
+                {
+                    session.StartedBySpectate = false;
+                    session.ForcedPlayersLayer = false;
+                    session.ForcedArrows = false;
+                }
+            }
+            _sessionRemovalBuffer.Clear();
         }
 
         private bool TryStartAutomaticRadar(BasePlayer player, bool enabled, bool forceVisionArrows,
