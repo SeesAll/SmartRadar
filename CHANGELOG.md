@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [2.1.4] - 2026-08-07
+
+### Changed
+
+- Halved the vertical gap between the bottom button row and the panel instruction text.
+- Reduced the panel height from 35.5% to 33.9% of the screen while keeping it vertically centered and preserving the approved right-edge margin.
+- All earlier default layouts upgrade automatically; custom UI anchors remain untouched.
+
 ## [2.1.3] - 2026-08-07
 
 ### Changed
@@ -288,7 +296,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Dynamic voice-hook subscription and idle player-index suspension.
 - Configuration validation, localization, safe lifecycle cleanup, and corrupt-data recovery.
 
-[Unreleased]: https://github.com/SeesAll/SmartRecon/compare/2.1.3...HEAD
+[Unreleased]: https://github.com/SeesAll/SmartRecon/compare/2.1.4...HEAD
+[2.1.4]: https://github.com/SeesAll/SmartRecon/compare/2.1.3...2.1.4
 [2.1.3]: https://github.com/SeesAll/SmartRecon/compare/2.1.2...2.1.3
 [2.1.2]: https://github.com/SeesAll/SmartRecon/compare/2.1.1...2.1.2
 [2.1.1]: https://github.com/SeesAll/SmartRecon/compare/2.1.0...2.1.1

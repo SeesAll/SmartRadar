@@ -19,7 +19,7 @@ using UnityEngine;
 
 namespace Oxide.Plugins
 {
-    [Info("SmartRecon", "SeesAll", "2.1.3")]
+    [Info("SmartRecon", "SeesAll", "2.1.4")]
     [Description("Unified administrative reconnaissance, vanish, radar, inspection, and rapid movement for Rust")]
     public class SmartRecon : RustPlugin
     {
@@ -53,10 +53,12 @@ namespace Oxide.Plugins
         private const string ModeAll = "all";
         private const string ModeCustom = "custom";
         private const string RadarUiName = "SmartRecon.InvestigationUI";
-        private const string DefaultUiAnchorMin = "0.8525 0.3225";
-        private const string DefaultUiAnchorMax = "0.9925 0.6775";
-        private const string PreviousDefaultUiAnchorMin = "0.845 0.3225";
-        private const string PreviousDefaultUiAnchorMax = "0.985 0.6775";
+        private const string DefaultUiAnchorMin = "0.8525 0.3305";
+        private const string DefaultUiAnchorMax = "0.9925 0.6695";
+        private const string PreviousDefaultUiAnchorMin = "0.8525 0.3225";
+        private const string PreviousDefaultUiAnchorMax = "0.9925 0.6775";
+        private const string CompactDefaultUiAnchorMin = "0.845 0.3225";
+        private const string CompactDefaultUiAnchorMax = "0.985 0.6775";
         private const string IntermediateDefaultUiAnchorMin = "0.835 0.305";
         private const string IntermediateDefaultUiAnchorMax = "0.985 0.695";
         private const string OriginalDefaultUiAnchorMin = "0.815 0.275";
@@ -510,13 +512,17 @@ namespace Oxide.Plugins
             bool usesPreviousDefaultAnchors =
                 string.Equals(_config.UserInterface.AnchorMin, PreviousDefaultUiAnchorMin, StringComparison.Ordinal) &&
                 string.Equals(_config.UserInterface.AnchorMax, PreviousDefaultUiAnchorMax, StringComparison.Ordinal);
+            bool usesCompactDefaultAnchors =
+                string.Equals(_config.UserInterface.AnchorMin, CompactDefaultUiAnchorMin, StringComparison.Ordinal) &&
+                string.Equals(_config.UserInterface.AnchorMax, CompactDefaultUiAnchorMax, StringComparison.Ordinal);
             bool usesIntermediateDefaultAnchors =
                 string.Equals(_config.UserInterface.AnchorMin, IntermediateDefaultUiAnchorMin, StringComparison.Ordinal) &&
                 string.Equals(_config.UserInterface.AnchorMax, IntermediateDefaultUiAnchorMax, StringComparison.Ordinal);
             bool usesOriginalDefaultAnchors =
                 string.Equals(_config.UserInterface.AnchorMin, OriginalDefaultUiAnchorMin, StringComparison.Ordinal) &&
                 string.Equals(_config.UserInterface.AnchorMax, OriginalDefaultUiAnchorMax, StringComparison.Ordinal);
-            if (usesPreviousDefaultAnchors || usesIntermediateDefaultAnchors || usesOriginalDefaultAnchors)
+            if (usesPreviousDefaultAnchors || usesCompactDefaultAnchors || usesIntermediateDefaultAnchors ||
+                usesOriginalDefaultAnchors)
             {
                 _config.UserInterface.AnchorMin = DefaultUiAnchorMin;
                 _config.UserInterface.AnchorMax = DefaultUiAnchorMax;
@@ -1514,7 +1520,7 @@ namespace Oxide.Plugins
             elements.Add(new CuiLabel
             {
                 Text = { Text = spectating ? "Click controls • × closes • /radar ui reopens" : "Open inventory to click • /radar ui hides panel", FontSize = 8, Align = TextAnchor.MiddleCenter, Color = "0.62 0.68 0.72 1" },
-                RectTransform = { AnchorMin = "0.04 0.02", AnchorMax = "0.96 0.12" }
+                RectTransform = { AnchorMin = "0.04 0.066", AnchorMax = "0.96 0.166" }
             }, RadarUiName);
             CuiHelper.AddUi(player, elements);
             session.UiVisible = true;
