@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [2.3.1] - 2026-08-07
+
+### Changed
+
+- The temporary panel-positioning controller now opens at the exact center of the screen. Its own location is intentionally fixed and is never stored as a personal preference.
+
 ## [2.3.0] - 2026-08-07
 
 ### Added
@@ -335,7 +341,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Dynamic voice-hook subscription and idle player-index suspension.
 - Configuration validation, localization, safe lifecycle cleanup, and corrupt-data recovery.
 
-[Unreleased]: https://github.com/SeesAll/SmartRecon/compare/2.3.0...HEAD
+[Unreleased]: https://github.com/SeesAll/SmartRecon/compare/2.3.1...HEAD
+[2.3.1]: https://github.com/SeesAll/SmartRecon/compare/2.3.0...2.3.1
 [2.3.0]: https://github.com/SeesAll/SmartRecon/compare/2.2.0...2.3.0
 [2.2.0]: https://github.com/SeesAll/SmartRecon/compare/2.1.5...2.2.0
 [2.1.5]: https://github.com/SeesAll/SmartRecon/compare/2.1.4...2.1.5

@@ -19,7 +19,7 @@ using UnityEngine;
 
 namespace Oxide.Plugins
 {
-    [Info("SmartRecon", "SeesAll", "2.3.0")]
+    [Info("SmartRecon", "SeesAll", "2.3.1")]
     [Description("Unified administrative reconnaissance, vanish, radar, inspection, and rapid movement for Rust")]
     public class SmartRecon : RustPlugin
     {
@@ -1836,7 +1836,7 @@ namespace Oxide.Plugins
             elements.Add(new CuiPanel
             {
                 Image = { Color = settings.PanelColor },
-                RectTransform = { AnchorMin = "0.43 0.15", AnchorMax = "0.57 0.45" },
+                RectTransform = { AnchorMin = "0.43 0.35", AnchorMax = "0.57 0.65" },
                 CursorEnabled = true
             }, parentLayer, RadarUiMoveName);
 
