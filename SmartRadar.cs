@@ -19,7 +19,7 @@ using UnityEngine;
 
 namespace Oxide.Plugins
 {
-    [Info("SmartRadar", "SeesAll", "1.2.3")]
+    [Info("SmartRadar", "SeesAll", "1.3.0")]
     [Description("Unified administrative vanish and high-performance radar for Rust")]
     public class SmartRadar : RustPlugin
     {
@@ -92,6 +92,7 @@ namespace Oxide.Plugins
         private readonly HashSet<ulong> _vanishedPlayers = new HashSet<ulong>();
         private readonly Dictionary<ulong, VanishRuntimeState> _vanishRuntime = new Dictionary<ulong, VanishRuntimeState>();
         private readonly Dictionary<ulong, float> _forensicCooldowns = new Dictionary<ulong, float>();
+        private readonly Dictionary<ulong, float> _mapTeleportCooldowns = new Dictionary<ulong, float>();
 
         private float _nextPlayerIndexRebuild;
         private float _nextSleeperIndexRebuild;
@@ -355,8 +356,20 @@ namespace Oxide.Plugins
             [JsonProperty("Enable reload-key investigative interaction while vanished")]
             public bool EnableReloadInteraction = true;
 
-            [JsonProperty("Enable reload plus map-marker teleport with smartradar.vanish.teleport")]
-            public bool EnableMapMarkerTeleport = false;
+            [JsonProperty("Enable vanish-only map-marker teleport with smartradar.vanish.teleport")]
+            public bool EnableMapMarkerTeleport = true;
+
+            [JsonProperty("Remove map marker after a successful vanish teleport")]
+            public bool RemoveTeleportMarker = true;
+
+            [JsonProperty("Preserve current noclip altitude when above the destination")]
+            public bool PreserveNoclipAltitude = true;
+
+            [JsonProperty("Map-marker teleport height offset")]
+            public float MapTeleportHeightOffset = 2f;
+
+            [JsonProperty("Minimum seconds between map-marker teleports")]
+            public float MapTeleportCooldown = 0.5f;
 
             [JsonProperty("Show Rust's native invisibility indicator")]
             public bool ShowNativeIndicator = true;
@@ -510,6 +523,8 @@ namespace Oxide.Plugins
             _config.Display.ArrowLength = Mathf.Clamp(_config.Display.ArrowLength, 0.5f, 25f);
             _config.Display.ArrowHeadRadius = Mathf.Clamp(_config.Display.ArrowHeadRadius, 0.01f, 2f);
             _config.Display.PlayerLabelScale = Mathf.Clamp(_config.Display.PlayerLabelScale, 0.25f, 3f);
+            _config.Vanish.MapTeleportHeightOffset = Mathf.Clamp(_config.Vanish.MapTeleportHeightOffset, 0f, 20f);
+            _config.Vanish.MapTeleportCooldown = Mathf.Clamp(_config.Vanish.MapTeleportCooldown, 0.1f, 10f);
 
             _playerDrawColor = ParseColor(_config.Display.PlayerDrawingColor, Color.white);
             _stashDrawColor = ParseColor(_config.Display.StashDrawingColor, new Color(0.9f, 0.26f, 0.96f));
@@ -786,6 +801,7 @@ namespace Oxide.Plugins
             _vanishStateCache.Clear();
             _vanishedPlayers.Clear();
             _vanishRuntime.Clear();
+            _mapTeleportCooldowns.Clear();
             ClearIndexes();
             UnsubscribeVanishHooks();
             Instance = null;
@@ -828,6 +844,7 @@ namespace Oxide.Plugins
 
             _voiceActivity.Remove(player.userID);
             _vanishStateCache.Remove(player.userID);
+            _mapTeleportCooldowns.Remove(player.userID);
             if (_dataDirty) SaveData();
         }
 
@@ -3109,15 +3126,62 @@ namespace Oxide.Plugins
 
         private object OnMapMarkerAdd(BasePlayer player, ProtoBuf.MapNote note)
         {
-            if (!IsBuiltInVanished(player) || note == null || player.isMounted ||
-                !HasPermission(player, PermVanishTeleport) || !player.serverInput.IsDown(BUTTON.RELOAD))
+            if (!IsBuiltInVanished(player) || note == null || player == null || !player.IsConnected ||
+                player.isMounted || !player.IsAlive() || !HasPermission(player, PermVanishTeleport))
                 return null;
-            player.serverInput.Clear();
-            Vector3 destination = new Vector3(note.worldPosition.x, player.transform.position.y, note.worldPosition.z);
-            player.MovePosition(destination, false);
-            player.ClientRPC(RpcTarget.Player("ForcePositionTo", player), destination);
+
+            float now = Time.realtimeSinceStartup;
+            float availableAt;
+            if (_mapTeleportCooldowns.TryGetValue(player.userID, out availableAt) && now < availableAt)
+            {
+                if (_config.Vanish.RemoveTeleportMarker)
+                {
+                    RemoveTeleportMapNote(player, note);
+                    return true;
+                }
+                return null;
+            }
+            _mapTeleportCooldowns[player.userID] = now + _config.Vanish.MapTeleportCooldown;
+
+            Vector3 destination = note.worldPosition;
+            destination.y = GetMapTeleportHeight(destination);
+            if (_config.Vanish.PreserveNoclipAltitude && player.IsFlying)
+                destination.y = Mathf.Max(destination.y, player.transform.position.y);
+            destination.y += _config.Vanish.MapTeleportHeightOffset;
+
+            player.Teleport(destination);
+            player.RemoveFromTriggers();
+            player.ForceUpdateTriggers();
+            UpdateVanishNetworkGroup(player);
+            if (_config.Vanish.RemoveTeleportMarker)
+            {
+                RemoveTeleportMapNote(player, note);
+                return true;
+            }
+            return null;
+        }
+
+        private static float GetMapTeleportHeight(Vector3 position)
+        {
+            float terrainHeight = TerrainMeta.HeightMap.GetHeight(position);
+            RaycastHit hit;
+            Vector3 rayOrigin = new Vector3(position.x, Mathf.Max(terrainHeight, position.y) + 500f, position.z);
+            int layerMask = Rust.Layers.Mask.Vehicle_Large | Rust.Layers.Solid | Rust.Layers.Mask.Water;
+            if (Physics.Raycast(rayOrigin, Vector3.down, out hit, 1000f, layerMask))
+                return Mathf.Max(terrainHeight, hit.point.y);
+            return terrainHeight;
+        }
+
+        private static void RemoveTeleportMapNote(BasePlayer player, ProtoBuf.MapNote note)
+        {
+            if (note == null) return;
+            if (player != null && player.State != null)
+            {
+                if (player.State.pointsOfInterest != null) player.State.pointsOfInterest.Remove(note);
+                player.DirtyPlayerState();
+                player.SendMarkersToClient();
+            }
             note.Dispose();
-            return true;
         }
 
         private BasePlayer FindPlayer(string query)

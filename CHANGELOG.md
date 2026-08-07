@@ -6,6 +6,25 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-08-07
+
+### Added
+
+- Vanish-only map-marker teleport integrated directly into SmartRadar under the existing `smartradar.vanish.teleport` permission.
+- Collision-aware destination height selection covering terrain, structures, water, and large vehicles.
+- Configurable landing offset, optional preservation of a higher noclip altitude, automatic used-marker removal, and a small anti-double-fire interval.
+
+### Changed
+
+- Vanished administrators no longer need to hold reload while placing the map marker. Placing the note is the teleport action.
+- Map-marker teleport is enabled by default but remains protected by its dedicated permission.
+- Visible players are never intercepted; their map notes retain ordinary Rust behavior.
+
+### Performance
+
+- The marker hook remains dynamically subscribed only while at least one SmartRadar-managed administrator is vanished.
+- Teleport processing performs one bounded raycast and constant-time state checks only when an eligible marker is placed.
+
 ## [1.2.3] - 2026-08-06
 
 ### Fixed
@@ -142,7 +161,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Dynamic voice-hook subscription and idle player-index suspension.
 - Configuration validation, localization, safe lifecycle cleanup, and corrupt-data recovery.
 
-[Unreleased]: https://github.com/SeesAll/SmartRadar/compare/1.2.3...HEAD
+[Unreleased]: https://github.com/SeesAll/SmartRadar/compare/1.3.0...HEAD
+[1.3.0]: https://github.com/SeesAll/SmartRadar/compare/1.2.3...1.3.0
 [1.2.3]: https://github.com/SeesAll/SmartRadar/compare/1.2.2...1.2.3
 [1.2.2]: https://github.com/SeesAll/SmartRadar/compare/1.2.1...1.2.2
 [1.2.1]: https://github.com/SeesAll/SmartRadar/compare/1.2.0...1.2.1
