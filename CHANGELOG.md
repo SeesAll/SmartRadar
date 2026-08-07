@@ -6,6 +6,23 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [2.2.0] - 2026-08-07
+
+### Added
+
+- The `↕` title area is now a dedicated drag handle that lets each administrator reposition the investigation panel without editing anchor values.
+- Personal panel centers are stored per Steam ID and restored across reconnects and plugin reloads.
+- `/radar ui reset` removes the caller's personal position and restores the server-configured default.
+- Added `Allow administrators to move and save their panel position`, enabled by default.
+
+### Changed
+
+- Personal positions are clamped so the complete panel settles within the visible screen after a drag.
+- Drag persistence and panel rebuilding are debounced so repeated client position updates produce one data write and one refresh after movement stops.
+- Default UI anchors are now structurally validated and safely reset if malformed or outside the screen.
+- Revoking `smartrecon.ui` removes an open panel immediately, with scheduler reconciliation covering group-permission changes.
+- Updated stale compatibility documentation to describe the current release validation.
+
 ## [2.1.5] - 2026-08-07
 
 ### Changed
@@ -303,7 +320,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Dynamic voice-hook subscription and idle player-index suspension.
 - Configuration validation, localization, safe lifecycle cleanup, and corrupt-data recovery.
 
-[Unreleased]: https://github.com/SeesAll/SmartRecon/compare/2.1.5...HEAD
+[Unreleased]: https://github.com/SeesAll/SmartRecon/compare/2.2.0...HEAD
+[2.2.0]: https://github.com/SeesAll/SmartRecon/compare/2.1.5...2.2.0
 [2.1.5]: https://github.com/SeesAll/SmartRecon/compare/2.1.4...2.1.5
 [2.1.4]: https://github.com/SeesAll/SmartRecon/compare/2.1.3...2.1.4
 [2.1.3]: https://github.com/SeesAll/SmartRecon/compare/2.1.2...2.1.3

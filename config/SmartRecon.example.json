@@ -112,6 +112,7 @@
     "Enabled": true,
     "Show automatically when radar starts": true,
     "Render above inventory blur": true,
+    "Allow administrators to move and save their panel position": true,
     "Anchor minimum": "0.8525 0.3305",
     "Anchor maximum": "0.9925 0.6695",
     "Panel color": "0.035 0.045 0.055 0.94",

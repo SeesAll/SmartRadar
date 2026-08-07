@@ -19,7 +19,7 @@ using UnityEngine;
 
 namespace Oxide.Plugins
 {
-    [Info("SmartRecon", "SeesAll", "2.1.5")]
+    [Info("SmartRecon", "SeesAll", "2.2.0")]
     [Description("Unified administrative reconnaissance, vanish, radar, inspection, and rapid movement for Rust")]
     public class SmartRecon : RustPlugin
     {
@@ -53,6 +53,7 @@ namespace Oxide.Plugins
         private const string ModeAll = "all";
         private const string ModeCustom = "custom";
         private const string RadarUiName = "SmartRecon.InvestigationUI";
+        private const string RadarUiDragHandleName = "SmartRecon.InvestigationUI.DragHandle";
         private const string DefaultUiAnchorMin = "0.8525 0.3305";
         private const string DefaultUiAnchorMax = "0.9925 0.6695";
         private const string PreviousDefaultUiAnchorMin = "0.8525 0.3225";
@@ -63,6 +64,11 @@ namespace Oxide.Plugins
         private const string IntermediateDefaultUiAnchorMax = "0.985 0.695";
         private const string OriginalDefaultUiAnchorMin = "0.815 0.275";
         private const string OriginalDefaultUiAnchorMax = "0.985 0.725";
+        private const float UiDragHandleMinX = 0.04f;
+        private const float UiDragHandleMaxX = 0.83f;
+        private const float UiDragHandleMinY = 0.905f;
+        private const float UiDragHandleMaxY = 0.985f;
+        private static readonly char[] UiAnchorSeparators = { ' ', '\t' };
 
         #endregion
 
@@ -103,6 +109,7 @@ namespace Oxide.Plugins
         private readonly Dictionary<ulong, VanishRuntimeState> _vanishRuntime = new Dictionary<ulong, VanishRuntimeState>();
         private readonly Dictionary<ulong, float> _forensicCooldowns = new Dictionary<ulong, float>();
         private readonly Dictionary<ulong, float> _mapTeleportCooldowns = new Dictionary<ulong, float>();
+        private readonly Dictionary<ulong, Timer> _uiDragTimers = new Dictionary<ulong, Timer>();
 
         private float _nextPlayerIndexRebuild;
         private float _nextSleeperIndexRebuild;
@@ -446,6 +453,9 @@ namespace Oxide.Plugins
             [JsonProperty("Render above inventory blur")]
             public bool RenderAboveInventoryBlur = true;
 
+            [JsonProperty("Allow administrators to move and save their panel position")]
+            public bool AllowPersonalPositioning = true;
+
             [JsonProperty("Anchor minimum")]
             public string AnchorMin = DefaultUiAnchorMin;
 
@@ -531,6 +541,18 @@ namespace Oxide.Plugins
                 _config.UserInterface.AnchorMax = DefaultUiAnchorMax;
             }
 
+            Vector2 uiAnchorMin;
+            Vector2 uiAnchorMax;
+            if (!TryParseAnchor(_config.UserInterface.AnchorMin, out uiAnchorMin) ||
+                !TryParseAnchor(_config.UserInterface.AnchorMax, out uiAnchorMax) ||
+                uiAnchorMin.x < 0f || uiAnchorMin.y < 0f || uiAnchorMax.x > 1f || uiAnchorMax.y > 1f ||
+                uiAnchorMin.x >= uiAnchorMax.x || uiAnchorMin.y >= uiAnchorMax.y)
+            {
+                PrintWarning("Investigation UI anchors were invalid and have been reset to defaults.");
+                _config.UserInterface.AnchorMin = DefaultUiAnchorMin;
+                _config.UserInterface.AnchorMax = DefaultUiAnchorMax;
+            }
+
             if (_config.General.CommandAliases == null || _config.General.CommandAliases.Length == 0)
                 _config.General.CommandAliases = new[] { "radar", "recon", "smartrecon" };
             if (_config.Vanish.CommandAliases == null || _config.Vanish.CommandAliases.Length == 0)
@@ -589,6 +611,28 @@ namespace Oxide.Plugins
             return fallback;
         }
 
+        private static bool TryParseAnchor(string value, out Vector2 anchor)
+        {
+            anchor = Vector2.zero;
+            if (string.IsNullOrWhiteSpace(value)) return false;
+            string[] parts = value.Split(UiAnchorSeparators, StringSplitOptions.RemoveEmptyEntries);
+            if (parts.Length != 2) return false;
+            float x;
+            float y;
+            if (!float.TryParse(parts[0], NumberStyles.Float, CultureInfo.InvariantCulture, out x) ||
+                !float.TryParse(parts[1], NumberStyles.Float, CultureInfo.InvariantCulture, out y) ||
+                float.IsNaN(x) || float.IsInfinity(x) || float.IsNaN(y) || float.IsInfinity(y))
+                return false;
+            anchor = new Vector2(x, y);
+            return true;
+        }
+
+        private static string FormatAnchor(Vector2 anchor)
+        {
+            return anchor.x.ToString("0.####", CultureInfo.InvariantCulture) + " " +
+                anchor.y.ToString("0.####", CultureInfo.InvariantCulture);
+        }
+
         #endregion
 
         #region Data
@@ -600,6 +644,18 @@ namespace Oxide.Plugins
 
             [JsonProperty("Administrators who should remain vanished")]
             public HashSet<ulong> VanishedUsers = new HashSet<ulong>();
+
+            [JsonProperty("Personal panel positions")]
+            public Dictionary<ulong, UserInterfacePosition> UiPositions = new Dictionary<ulong, UserInterfacePosition>();
+        }
+
+        private sealed class UserInterfacePosition
+        {
+            [JsonProperty("Center X")]
+            public float CenterX;
+
+            [JsonProperty("Center Y")]
+            public float CenterY;
         }
 
         private sealed class RadarPreferences
@@ -636,6 +692,8 @@ namespace Oxide.Plugins
                     _storedData.Preferences = new Dictionary<ulong, RadarPreferences>();
                 if (_storedData.VanishedUsers == null)
                     _storedData.VanishedUsers = new HashSet<ulong>();
+                if (_storedData.UiPositions == null)
+                    _storedData.UiPositions = new Dictionary<ulong, UserInterfacePosition>();
             }
             catch (Exception exception)
             {
@@ -657,7 +715,8 @@ namespace Oxide.Plugins
                     : new Dictionary<ulong, RadarPreferences>(),
                 VanishedUsers = _config.Vanish.PersistVanishState
                     ? _storedData.VanishedUsers
-                    : new HashSet<ulong>()
+                    : new HashSet<ulong>(),
+                UiPositions = _storedData.UiPositions
             };
             _dataFile.WriteObject(snapshot);
             _dataDirty = false;
@@ -755,7 +814,8 @@ namespace Oxide.Plugins
                 ["SettingChanged"] = "SmartRecon {0} set to {1}.",
                 ["FilterChanged"] = "SmartRecon {0} filter set to {1}.",
                 ["SettingsReset"] = "SmartRecon settings reset to defaults.",
-                ["Help"] = "SmartRecon commands:\n/radar - toggle\n/radar <players|stashes|tcs|all> [distance] [rate]\n/radar on|off|status|reset|ui\n/radar mode <mode>\n/radar layer <players|npcs|loot|stashes|tcs> [on|off]\n/radar distance <meters>\n/radar rate <seconds>\n/radar for <seconds>\n/radar arrows|voice|sleepers|vanished|extended|tclinks [on|off]\n/radar filter name <text|off>\n/radar filter team <all|mine|others|solo>\n/radar filter auth <all|players|staff|moderators|owners>\n/radar filter safezone <all|inside|outside>\n/radar findid <steamid>\n/radar buildings <twig|unprivileged>\n/radar drops [distance]",
+                ["UiPositionReset"] = "SmartRecon panel position reset to the configured default.",
+                ["Help"] = "SmartRecon commands:\n/radar - toggle\n/radar <players|stashes|tcs|all> [distance] [rate]\n/radar on|off|status|reset|ui\n/radar ui reset - restore the configured panel position\n/radar mode <mode>\n/radar layer <players|npcs|loot|stashes|tcs> [on|off]\n/radar distance <meters>\n/radar rate <seconds>\n/radar for <seconds>\n/radar arrows|voice|sleepers|vanished|extended|tclinks [on|off]\n/radar filter name <text|off>\n/radar filter team <all|mine|others|solo>\n/radar filter auth <all|players|staff|moderators|owners>\n/radar filter safezone <all|inside|outside>\n/radar findid <steamid>\n/radar buildings <twig|unprivileged>\n/radar drops [distance]",
                 ["VanishedUnavailable"] = "Viewing vanished players is disabled or not permitted.",
                 ["ConsolePlayerOnly"] = "SmartRecon must be controlled by an in-game player.",
                 ["DurationSet"] = "SmartRecon will automatically disable in {0:0.#} seconds.",
@@ -853,6 +913,11 @@ namespace Oxide.Plugins
             _vanishedPlayers.Clear();
             _vanishRuntime.Clear();
             _mapTeleportCooldowns.Clear();
+            foreach (Timer uiDragTimer in _uiDragTimers.Values)
+            {
+                if (uiDragTimer != null && !uiDragTimer.Destroyed) uiDragTimer.Destroy();
+            }
+            _uiDragTimers.Clear();
             ClearIndexes();
             UnsubscribeVanishHooks();
             Instance = null;
@@ -897,6 +962,12 @@ namespace Oxide.Plugins
             _vanishStateCache.Remove(player.userID);
             _mapTeleportCooldowns.Remove(player.userID);
             _forensicCooldowns.Remove(player.userID);
+            Timer uiDragTimer;
+            if (_uiDragTimers.TryGetValue(player.userID, out uiDragTimer))
+            {
+                if (uiDragTimer != null && !uiDragTimer.Destroyed) uiDragTimer.Destroy();
+                _uiDragTimers.Remove(player.userID);
+            }
             if (_dataDirty) SaveData();
         }
 
@@ -978,10 +1049,42 @@ namespace Oxide.Plugins
             if (player == null) return;
 
             if (PermissionMatches(permissionName, PermUse) && !HasPermission(player, PermUse))
+            {
                 StopRadar(player, true);
+                return;
+            }
             else if (PermissionMatches(permissionName, PermVanish) &&
                      !HasPermission(player, PermVanish) && IsBuiltInVanished(player))
+            {
                 ExitVanish(player, true, false, false);
+                return;
+            }
+
+            RadarSession session;
+            if (!_sessions.TryGetValue(player.userID, out session) || session == null) return;
+            if (PermissionMatches(permissionName, PermUi) && !HasPermission(player, PermUi))
+            {
+                session.UiVisible = false;
+                DestroyRadarUi(player);
+                return;
+            }
+
+            string deniedFeature;
+            if (!CanUsePreferences(player, session.Preferences, out deniedFeature))
+            {
+                StopRadar(player, true);
+                return;
+            }
+
+            if (PermissionMatches(permissionName, PermPlayers) && !HasPermission(player, PermPlayers))
+            {
+                session.ForcedPlayersLayer = false;
+                session.ForcedArrows = false;
+            }
+            if (PermissionMatches(permissionName, PermArrows) && !HasPermission(player, PermArrows))
+                session.ForcedArrows = false;
+            RefreshVoiceWatcherCount();
+            if (session.UiVisible) ShowRadarUi(player, session);
         }
 
         private void OnUserPermissionGranted(string id, string permissionName)
@@ -1165,6 +1268,20 @@ namespace Oxide.Plugins
                     if (!HasPermission(player, PermUi))
                     {
                         Reply(player, "FeaturePermission", "ui");
+                        return;
+                    }
+                    if (args.Length > 1)
+                    {
+                        if (!string.Equals(args[1], "reset", StringComparison.OrdinalIgnoreCase))
+                        {
+                            Reply(player, "Help");
+                            return;
+                        }
+                        _storedData.UiPositions.Remove(player.userID);
+                        _dataDirty = true;
+                        SaveData();
+                        if (session != null && session.Preferences.ShowUi == true) ShowRadarUi(player, session);
+                        Reply(player, "UiPositionReset");
                         return;
                     }
                     preferences.ShowUi = session != null ? !session.UiVisible : !(preferences.ShowUi ?? true);
@@ -1474,6 +1591,99 @@ namespace Oxide.Plugins
             ShowRadarUi(player, session);
         }
 
+        private void OnCuiDraggableDrag(BasePlayer player, string name, Vector3 position,
+            CommunityEntity.DraggablePositionSendType type)
+        {
+            if (player == null || name != RadarUiDragHandleName || !_config.UserInterface.AllowPersonalPositioning ||
+                type != CommunityEntity.DraggablePositionSendType.NormalizedScreen ||
+                !HasPermission(player, PermUse) || !HasPermission(player, PermUi) ||
+                float.IsNaN(position.x) || float.IsInfinity(position.x) ||
+                float.IsNaN(position.y) || float.IsInfinity(position.y))
+                return;
+
+            RadarSession session;
+            if (!_sessions.TryGetValue(player.userID, out session) || session == null || !session.UiVisible) return;
+            ulong userId = player.userID;
+
+            Vector2 configuredMin;
+            Vector2 configuredMax;
+            GetConfiguredUiBounds(out configuredMin, out configuredMax);
+            Vector2 panelSize = configuredMax - configuredMin;
+            float handleCenterX = (UiDragHandleMinX + UiDragHandleMaxX) * 0.5f;
+            float handleCenterY = (UiDragHandleMinY + UiDragHandleMaxY) * 0.5f;
+            Vector2 droppedHandleCenter = new Vector2(position.x, 1f - position.y);
+            Vector2 panelCenter = droppedHandleCenter + new Vector2(
+                (0.5f - handleCenterX) * panelSize.x,
+                (0.5f - handleCenterY) * panelSize.y);
+            panelCenter = ClampUiCenter(panelCenter, panelSize);
+
+            _storedData.UiPositions[userId] = new UserInterfacePosition
+            {
+                CenterX = panelCenter.x,
+                CenterY = panelCenter.y
+            };
+            _dataDirty = true;
+
+            Timer pendingTimer;
+            if (_uiDragTimers.TryGetValue(userId, out pendingTimer) && pendingTimer != null && !pendingTimer.Destroyed)
+            {
+                pendingTimer.Reset();
+                return;
+            }
+
+            _uiDragTimers[userId] = timer.Once(0.2f, delegate
+            {
+                _uiDragTimers.Remove(userId);
+                if (_dataDirty) SaveData();
+                RadarSession activeSession;
+                if (player != null && player.IsConnected &&
+                    _sessions.TryGetValue(userId, out activeSession) && activeSession != null && activeSession.UiVisible)
+                    ShowRadarUi(player, activeSession);
+            });
+        }
+
+        private void GetUiBounds(ulong userId, out Vector2 panelMin, out Vector2 panelMax)
+        {
+            Vector2 configuredMin;
+            Vector2 configuredMax;
+            GetConfiguredUiBounds(out configuredMin, out configuredMax);
+            Vector2 panelSize = configuredMax - configuredMin;
+            Vector2 center = (configuredMin + configuredMax) * 0.5f;
+
+            UserInterfacePosition savedPosition;
+            if (_config.UserInterface.AllowPersonalPositioning &&
+                _storedData.UiPositions.TryGetValue(userId, out savedPosition) && savedPosition != null &&
+                !float.IsNaN(savedPosition.CenterX) && !float.IsInfinity(savedPosition.CenterX) &&
+                !float.IsNaN(savedPosition.CenterY) && !float.IsInfinity(savedPosition.CenterY))
+            {
+                center = new Vector2(savedPosition.CenterX, savedPosition.CenterY);
+            }
+
+            center = ClampUiCenter(center, panelSize);
+            panelMin = center - panelSize * 0.5f;
+            panelMax = center + panelSize * 0.5f;
+        }
+
+        private void GetConfiguredUiBounds(out Vector2 panelMin, out Vector2 panelMax)
+        {
+            if (TryParseAnchor(_config.UserInterface.AnchorMin, out panelMin) &&
+                TryParseAnchor(_config.UserInterface.AnchorMax, out panelMax) &&
+                panelMin.x >= 0f && panelMin.y >= 0f && panelMax.x <= 1f && panelMax.y <= 1f &&
+                panelMin.x < panelMax.x && panelMin.y < panelMax.y)
+                return;
+
+            panelMin = new Vector2(0.8525f, 0.3305f);
+            panelMax = new Vector2(0.9925f, 0.6695f);
+        }
+
+        private static Vector2 ClampUiCenter(Vector2 center, Vector2 panelSize)
+        {
+            Vector2 halfSize = panelSize * 0.5f;
+            center.x = Mathf.Clamp(center.x, halfSize.x, 1f - halfSize.x);
+            center.y = Mathf.Clamp(center.y, halfSize.y, 1f - halfSize.y);
+            return center;
+        }
+
         private void ShowRadarUi(BasePlayer player, RadarSession session)
         {
             DestroyRadarUi(player);
@@ -1485,19 +1695,61 @@ namespace Oxide.Plugins
             bool spectating = player.IsSpectating();
             string workflowStatus = spectating ? "SPECTATE ON" : IsBuiltInVanished(player) ? "VANISH ON" : "VANISH OFF";
             string parentLayer = settings.RenderAboveInventoryBlur ? "Overlay" : "Hud";
+            Vector2 panelMin;
+            Vector2 panelMax;
+            GetUiBounds(player.userID, out panelMin, out panelMax);
             CuiElementContainer elements = new CuiElementContainer();
             elements.Add(new CuiPanel
             {
                 Image = { Color = settings.PanelColor },
-                RectTransform = { AnchorMin = settings.AnchorMin, AnchorMax = settings.AnchorMax },
+                RectTransform = { AnchorMin = FormatAnchor(panelMin), AnchorMax = FormatAnchor(panelMax) },
                 CursorEnabled = spectating
             }, parentLayer, RadarUiName);
 
-            elements.Add(new CuiLabel
+            if (settings.AllowPersonalPositioning)
             {
-                Text = { Text = "SMARTRECON", FontSize = 13, Align = TextAnchor.MiddleLeft, Color = settings.TextColor },
-                RectTransform = { AnchorMin = "0.06 0.895", AnchorMax = "0.84 0.985" }
-            }, RadarUiName);
+                Vector2 panelSize = panelMax - panelMin;
+                Vector2 handleMin = panelMin + Vector2.Scale(panelSize, new Vector2(UiDragHandleMinX, UiDragHandleMinY));
+                Vector2 handleMax = panelMin + Vector2.Scale(panelSize, new Vector2(UiDragHandleMaxX, UiDragHandleMaxY));
+                elements.Add(new CuiElement
+                {
+                    Name = RadarUiDragHandleName,
+                    Parent = parentLayer,
+                    Components =
+                    {
+                        new CuiImageComponent { Color = "0 0 0 0" },
+                        new CuiRectTransformComponent { AnchorMin = FormatAnchor(handleMin), AnchorMax = FormatAnchor(handleMax) },
+                        new CuiDraggableComponent
+                        {
+                            LimitToParent = false,
+                            DropAnywhere = true,
+                            DragAlpha = 0.72f,
+                            KeepOnTop = false,
+                            PositionRPC = CommunityEntity.DraggablePositionSendType.NormalizedScreen,
+                            MoveToAnchor = true,
+                            RebuildAnchor = true
+                        }
+                    }
+                });
+                elements.Add(new CuiLabel
+                {
+                    Text = { Text = "SMARTRECON", FontSize = 13, Align = TextAnchor.MiddleLeft, Color = settings.TextColor },
+                    RectTransform = { AnchorMin = "0.025 0", AnchorMax = "0.78 1" }
+                }, RadarUiDragHandleName);
+                elements.Add(new CuiLabel
+                {
+                    Text = { Text = "↕", FontSize = 13, Align = TextAnchor.MiddleRight, Color = settings.AccentColor },
+                    RectTransform = { AnchorMin = "0.78 0", AnchorMax = "0.98 1" }
+                }, RadarUiDragHandleName);
+            }
+            else
+            {
+                elements.Add(new CuiLabel
+                {
+                    Text = { Text = "SMARTRECON", FontSize = 13, Align = TextAnchor.MiddleLeft, Color = settings.TextColor },
+                    RectTransform = { AnchorMin = "0.06 0.895", AnchorMax = "0.84 0.985" }
+                }, RadarUiName);
+            }
             elements.Add(new CuiLabel
             {
                 Text = { Text = workflowStatus + "  •  RADAR ON", FontSize = 9, Align = TextAnchor.MiddleLeft, Color = settings.AccentColor },
@@ -1523,7 +1775,7 @@ namespace Oxide.Plugins
 
             elements.Add(new CuiLabel
             {
-                Text = { Text = spectating ? "Click controls • × closes • /radar ui reopens" : "Open inventory to click • /radar ui hides panel", FontSize = 8, Align = TextAnchor.MiddleCenter, Color = "0.62 0.68 0.72 1" },
+                Text = { Text = spectating ? "Drag ↕ title • × closes • /radar ui reopens" : "Inventory for cursor • Drag ↕ title • /radar ui hides", FontSize = 8, Align = TextAnchor.MiddleCenter, Color = "0.62 0.68 0.72 1" },
                 RectTransform = { AnchorMin = "0.04 0.066", AnchorMax = "0.96 0.166" }
             }, RadarUiName);
             CuiHelper.AddUi(player, elements);
@@ -1548,7 +1800,9 @@ namespace Oxide.Plugins
 
         private static void DestroyRadarUi(BasePlayer player)
         {
-            if (player != null) CuiHelper.DestroyUi(player, RadarUiName);
+            if (player == null) return;
+            CuiHelper.DestroyUi(player, RadarUiDragHandleName);
+            CuiHelper.DestroyUi(player, RadarUiName);
         }
 
         private void SetTemporaryDuration(BasePlayer player, RadarPreferences preferences, RadarSession session, string[] args)
@@ -2024,6 +2278,11 @@ namespace Oxide.Plugins
                 {
                     _sessionRemovalBuffer.Add(userId);
                     continue;
+                }
+                if (session.UiVisible && !HasPermission(viewer, PermUi))
+                {
+                    session.UiVisible = false;
+                    DestroyRadarUi(viewer);
                 }
 
                 string deniedFeature;
