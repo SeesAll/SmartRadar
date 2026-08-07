@@ -6,6 +6,36 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-08-06
+
+### Added
+
+- Modern right-side investigation panel with live toggles for players, NPCs, loot, stashes, tool cupboards, sleepers, vision arrows, extended information, TC links, and voice indicators.
+- Independent persistent radar layers and a `custom` profile mode.
+- `/radar ui` and `/radar layer <players|npcs|loot|stashes|tcs> [on|off]` commands.
+- Bounded NPC and dropped/world-loot tracking with separate permissions, defaults, colors, and result limits.
+- Optional held-item and weapon-attachment details for player labels.
+- Optional TC authorization counts and nearest authorized player-to-TC arrows.
+- Time-sliced `/radar findid` and `/radar buildings` forensic searches plus indexed `/radar drops` drawings, capped at 250 results and protected by a cooldown.
+- Radar API methods and activation, deactivation, investigation-start, and investigation-end hooks.
+
+### Changed
+
+- Vanish-started radar now opens the investigation panel by default after forcing player vision arrows on.
+- Legacy mode presets now populate independent layers while panel or layer-command changes switch the profile to `custom`.
+- Radar status and help output now cover layers, UI, extended details, TC links, and forensic commands.
+
+### Performance
+
+- Loot uses the same shared spatial-cell strategy as stashes and tool cupboards and respects both category and total drawing limits.
+- The investigation panel updates only after a setting changes rather than during radar refresh cycles.
+- Forensic entity processing yields every 200 inspected entities and never emits more than 250 drawings per search.
+
+### Security
+
+- NPCs, loot, extended player details, TC information, UI access, and forensic searches each have separate permissions.
+- Forensic searches have a ten-second per-user cooldown.
+
 ## [1.1.1] - 2026-08-06
 
 ### Fixed
@@ -70,7 +100,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Dynamic voice-hook subscription and idle player-index suspension.
 - Configuration validation, localization, safe lifecycle cleanup, and corrupt-data recovery.
 
-[Unreleased]: https://github.com/SeesAll/SmartRadar/compare/1.1.1...HEAD
+[Unreleased]: https://github.com/SeesAll/SmartRadar/compare/1.2.0...HEAD
+[1.2.0]: https://github.com/SeesAll/SmartRadar/compare/1.1.1...1.2.0
 [1.1.1]: https://github.com/SeesAll/SmartRadar/compare/1.1.0...1.1.1
 [1.1.0]: https://github.com/SeesAll/SmartRadar/compare/1.0.0...1.1.0
 [1.0.0]: https://github.com/SeesAll/SmartRadar/releases/tag/1.0.0

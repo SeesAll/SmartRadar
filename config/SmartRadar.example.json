@@ -31,6 +31,7 @@
     "Maximum player labels per update": 100,
     "Maximum stash labels per update": 75,
     "Maximum cupboard labels per update": 75,
+    "Maximum loot labels per update": 60,
     "Maximum total draw commands per session cycle": 180
   },
   "Display settings": {
@@ -38,6 +39,10 @@
     "Enable voice indicators by default": false,
     "Include sleepers by default": false,
     "Include NPC players": true,
+    "Enable NPC layer by default": false,
+    "Enable loot layer by default": false,
+    "Enable extended player information by default": false,
+    "Enable TC authorization links by default": false,
     "Voice indicator duration in seconds": 2.0,
     "Player label vertical offset": 2.0,
     "Static entity label vertical offset": 0.5,
@@ -49,7 +54,8 @@
     "Player drawing color": "#FFFFFF",
     "Stash drawing color": "#E642F5",
     "Cupboard drawing color": "#05F5E5",
-    "Vision arrow color": "#FFFFFF"
+    "Vision arrow color": "#FFFFFF",
+    "Loot drawing color": "#F2C94C"
   },
   "Vanish and owner privacy": {
     "Hide vanished players unless explicitly enabled and permitted": true,
@@ -87,5 +93,16 @@
     "Use the administrator's saved radar mode and filters": true,
     "Radar mode when saved preferences are not used": "players",
     "Force player vision arrows on while vanish started radar": true
+  },
+  "Investigation user interface": {
+    "Enabled": true,
+    "Show automatically when radar starts": true,
+    "Anchor minimum": "0.815 0.275",
+    "Anchor maximum": "0.985 0.725",
+    "Panel color": "0.035 0.045 0.055 0.94",
+    "Accent color": "0.10 0.78 0.72 1.0",
+    "Enabled button color": "0.08 0.62 0.56 0.95",
+    "Disabled button color": "0.16 0.19 0.22 0.92",
+    "Text color": "0.94 0.97 0.98 1.0"
   }
 }

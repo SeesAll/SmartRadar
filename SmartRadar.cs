@@ -6,9 +6,11 @@ using Oxide.Core;
 using Oxide.Core.Configuration;
 using Oxide.Core.Libraries.Covalence;
 using Oxide.Core.Plugins;
+using Oxide.Game.Rust.Cui;
 using Rust;
 using Rust.Ai;
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Reflection;
@@ -17,7 +19,7 @@ using UnityEngine;
 
 namespace Oxide.Plugins
 {
-    [Info("SmartRadar", "SeesAll", "1.1.1")]
+    [Info("SmartRadar", "SeesAll", "1.2.0")]
     [Description("Unified administrative vanish and high-performance radar for Rust")]
     public class SmartRadar : RustPlugin
     {
@@ -39,11 +41,19 @@ namespace Oxide.Plugins
         private const string PermVanishDamage = "smartradar.vanish.damage";
         private const string PermVanishInventory = "smartradar.vanish.inventory";
         private const string PermVanishTeleport = "smartradar.vanish.teleport";
+        private const string PermNpcs = "smartradar.npcs";
+        private const string PermLoot = "smartradar.loot";
+        private const string PermExtended = "smartradar.extended";
+        private const string PermTcInfo = "smartradar.tcinfo";
+        private const string PermUi = "smartradar.ui";
+        private const string PermForensics = "smartradar.forensics";
 
         private const string ModePlayers = "players";
         private const string ModeStashes = "stashes";
         private const string ModeCupboards = "tcs";
         private const string ModeAll = "all";
+        private const string ModeCustom = "custom";
+        private const string RadarUiName = "SmartRadar.InvestigationUI";
 
         #endregion
 
@@ -62,18 +72,22 @@ namespace Oxide.Plugins
         private readonly Dictionary<long, List<BasePlayer>> _sleepingPlayerIndex = new Dictionary<long, List<BasePlayer>>();
         private readonly Dictionary<long, List<StashContainer>> _stashIndex = new Dictionary<long, List<StashContainer>>();
         private readonly Dictionary<long, List<BuildingPrivlidge>> _cupboardIndex = new Dictionary<long, List<BuildingPrivlidge>>();
+        private readonly Dictionary<long, List<BaseEntity>> _lootIndex = new Dictionary<long, List<BaseEntity>>();
         private readonly Dictionary<int, long> _stashCells = new Dictionary<int, long>();
         private readonly Dictionary<int, long> _cupboardCells = new Dictionary<int, long>();
+        private readonly Dictionary<int, long> _lootCells = new Dictionary<int, long>();
 
         private readonly List<PlayerCandidate> _playerCandidates = new List<PlayerCandidate>(256);
         private readonly List<StaticCandidate<StashContainer>> _stashCandidates = new List<StaticCandidate<StashContainer>>(256);
         private readonly List<StaticCandidate<BuildingPrivlidge>> _cupboardCandidates = new List<StaticCandidate<BuildingPrivlidge>>(256);
+        private readonly List<StaticCandidate<BaseEntity>> _lootCandidates = new List<StaticCandidate<BaseEntity>>(256);
         private readonly List<ulong> _sessionRemovalBuffer = new List<ulong>();
         private readonly StringBuilder _labelBuilder = new StringBuilder(256);
         private readonly Dictionary<ulong, string> _teamColorCache = new Dictionary<ulong, string>();
         private readonly Dictionary<ulong, VanishCacheEntry> _vanishStateCache = new Dictionary<ulong, VanishCacheEntry>();
         private readonly HashSet<ulong> _vanishedPlayers = new HashSet<ulong>();
         private readonly Dictionary<ulong, VanishRuntimeState> _vanishRuntime = new Dictionary<ulong, VanishRuntimeState>();
+        private readonly Dictionary<ulong, float> _forensicCooldowns = new Dictionary<ulong, float>();
 
         private float _nextPlayerIndexRebuild;
         private float _nextSleeperIndexRebuild;
@@ -93,6 +107,7 @@ namespace Oxide.Plugins
         private Color _stashDrawColor;
         private Color _cupboardDrawColor;
         private Color _arrowDrawColor;
+        private Color _lootDrawColor;
 
         #endregion
 
@@ -120,6 +135,9 @@ namespace Oxide.Plugins
 
             [JsonProperty("Investigative vanish and radar workflow")]
             public InvestigationSettings Investigation = new InvestigationSettings();
+
+            [JsonProperty("Investigation user interface")]
+            public UserInterfaceSettings UserInterface = new UserInterfaceSettings();
         }
 
         private sealed class GeneralSettings
@@ -199,6 +217,9 @@ namespace Oxide.Plugins
             [JsonProperty("Maximum cupboard labels per update")]
             public int MaximumCupboards = 75;
 
+            [JsonProperty("Maximum loot labels per update")]
+            public int MaximumLoot = 60;
+
             [JsonProperty("Maximum total draw commands per session cycle")]
             public int MaximumDrawCommandsPerCycle = 180;
         }
@@ -216,6 +237,18 @@ namespace Oxide.Plugins
 
             [JsonProperty("Include NPC players")]
             public bool IncludeNpcPlayers = true;
+
+            [JsonProperty("Enable NPC layer by default")]
+            public bool DefaultNpcs = false;
+
+            [JsonProperty("Enable loot layer by default")]
+            public bool DefaultLoot = false;
+
+            [JsonProperty("Enable extended player information by default")]
+            public bool DefaultExtended = false;
+
+            [JsonProperty("Enable TC authorization links by default")]
+            public bool DefaultTcLinks = false;
 
             [JsonProperty("Voice indicator duration in seconds")]
             public float VoiceIndicatorDuration = 2f;
@@ -252,6 +285,9 @@ namespace Oxide.Plugins
 
             [JsonProperty("Vision arrow color")]
             public string ArrowDrawingColor = "#FFFFFF";
+
+            [JsonProperty("Loot drawing color")]
+            public string LootDrawingColor = "#F2C94C";
         }
 
         private sealed class PrivacySettings
@@ -338,6 +374,36 @@ namespace Oxide.Plugins
             public bool ForceVisionArrows = true;
         }
 
+        private sealed class UserInterfaceSettings
+        {
+            [JsonProperty("Enabled")]
+            public bool Enabled = true;
+
+            [JsonProperty("Show automatically when radar starts")]
+            public bool ShowOnRadarStart = true;
+
+            [JsonProperty("Anchor minimum")]
+            public string AnchorMin = "0.815 0.275";
+
+            [JsonProperty("Anchor maximum")]
+            public string AnchorMax = "0.985 0.725";
+
+            [JsonProperty("Panel color")]
+            public string PanelColor = "0.035 0.045 0.055 0.94";
+
+            [JsonProperty("Accent color")]
+            public string AccentColor = "0.10 0.78 0.72 1.0";
+
+            [JsonProperty("Enabled button color")]
+            public string EnabledColor = "0.08 0.62 0.56 0.95";
+
+            [JsonProperty("Disabled button color")]
+            public string DisabledColor = "0.16 0.19 0.22 0.92";
+
+            [JsonProperty("Text color")]
+            public string TextColor = "0.94 0.97 0.98 1.0";
+        }
+
         protected override void LoadDefaultConfig()
         {
             _config = new PluginConfig();
@@ -379,6 +445,7 @@ namespace Oxide.Plugins
             if (_config.Privacy == null) _config.Privacy = new PrivacySettings();
             if (_config.Vanish == null) _config.Vanish = new VanishSettings();
             if (_config.Investigation == null) _config.Investigation = new InvestigationSettings();
+            if (_config.UserInterface == null) _config.UserInterface = new UserInterfaceSettings();
 
             if (_config.General.CommandAliases == null || _config.General.CommandAliases.Length == 0)
                 _config.General.CommandAliases = new[] { "radar", "sradar", "smartradar" };
@@ -409,6 +476,7 @@ namespace Oxide.Plugins
             _config.Limits.MaximumPlayers = Mathf.Clamp(_config.Limits.MaximumPlayers, 1, 500);
             _config.Limits.MaximumStashes = Mathf.Clamp(_config.Limits.MaximumStashes, 1, 500);
             _config.Limits.MaximumCupboards = Mathf.Clamp(_config.Limits.MaximumCupboards, 1, 500);
+            _config.Limits.MaximumLoot = Mathf.Clamp(_config.Limits.MaximumLoot, 1, 500);
             _config.Limits.MaximumDrawCommandsPerCycle = Mathf.Clamp(_config.Limits.MaximumDrawCommandsPerCycle, 1, 1500);
 
             _config.Display.VoiceIndicatorDuration = Mathf.Clamp(_config.Display.VoiceIndicatorDuration, 0.1f, 30f);
@@ -422,6 +490,7 @@ namespace Oxide.Plugins
             _stashDrawColor = ParseColor(_config.Display.StashDrawingColor, new Color(0.9f, 0.26f, 0.96f));
             _cupboardDrawColor = ParseColor(_config.Display.CupboardDrawingColor, new Color(0.02f, 0.96f, 0.9f));
             _arrowDrawColor = ParseColor(_config.Display.ArrowDrawingColor, Color.white);
+            _lootDrawColor = ParseColor(_config.Display.LootDrawingColor, new Color(0.95f, 0.79f, 0.3f));
         }
 
         private static Color ParseColor(string value, Color fallback)
@@ -454,6 +523,14 @@ namespace Oxide.Plugins
             public bool ShowVoice;
             public bool ShowSleepers;
             public bool ShowVanished;
+            public bool? PlayersLayer;
+            public bool? StashesLayer;
+            public bool? CupboardsLayer;
+            public bool? NpcsLayer;
+            public bool? LootLayer;
+            public bool ShowExtended;
+            public bool ShowTcLinks;
+            public bool? ShowUi;
             public string NameFilter;
             public string TeamFilter;
             public string AuthorizationFilter;
@@ -524,6 +601,14 @@ namespace Oxide.Plugins
                 ShowVoice = _config.Display.DefaultVoiceIndicator,
                 ShowSleepers = _config.Display.DefaultSleepers,
                 ShowVanished = false,
+                PlayersLayer = _config.General.DefaultMode == ModePlayers || _config.General.DefaultMode == ModeAll,
+                StashesLayer = _config.General.DefaultMode == ModeStashes || _config.General.DefaultMode == ModeAll,
+                CupboardsLayer = _config.General.DefaultMode == ModeCupboards || _config.General.DefaultMode == ModeAll,
+                NpcsLayer = _config.Display.DefaultNpcs,
+                LootLayer = _config.Display.DefaultLoot,
+                ShowExtended = _config.Display.DefaultExtended,
+                ShowTcLinks = _config.Display.DefaultTcLinks,
+                ShowUi = true,
                 NameFilter = string.Empty,
                 TeamFilter = "all",
                 AuthorizationFilter = "all",
@@ -533,7 +618,13 @@ namespace Oxide.Plugins
 
         private void NormalizePreferences(RadarPreferences preferences)
         {
-            preferences.Mode = NormalizeMode(preferences.Mode) ?? _config.General.DefaultMode;
+            string normalizedMode = NormalizeMode(preferences.Mode) ?? _config.General.DefaultMode;
+            if (preferences.PlayersLayer == null || preferences.StashesLayer == null || preferences.CupboardsLayer == null)
+                ApplyModePreset(preferences, normalizedMode);
+            preferences.Mode = normalizedMode;
+            if (preferences.NpcsLayer == null) preferences.NpcsLayer = _config.Display.DefaultNpcs;
+            if (preferences.LootLayer == null) preferences.LootLayer = _config.Display.DefaultLoot;
+            if (preferences.ShowUi == null) preferences.ShowUi = true;
             if (!IsFinitePositive(preferences.Distance)) preferences.Distance = _config.General.DefaultDistance;
             if (!IsFinitePositive(preferences.RefreshRate)) preferences.RefreshRate = _config.General.DefaultRefreshRate;
             preferences.Distance = Mathf.Clamp(preferences.Distance, 1f, _config.General.MaximumExtendedDistance);
@@ -567,16 +658,16 @@ namespace Oxide.Plugins
                 ["Enabled"] = "SmartRadar enabled: {0} mode, {1:0.#}m, {2:0.##}s player refresh.",
                 ["Disabled"] = "SmartRadar disabled.",
                 ["AlreadyDisabled"] = "SmartRadar is already disabled.",
-                ["StatusOn"] = "SmartRadar: ON | mode={0} | distance={1:0.#}m | rate={2:0.##}s | arrows={3} | voice={4} | sleepers={5} | vanished={6} | team={7} | auth={8} | safezone={9} | name={10} | expires={11}",
+                ["StatusOn"] = "SmartRadar: ON | mode={0} | layers={12} | distance={1:0.#}m | rate={2:0.##}s | arrows={3} | voice={4} | sleepers={5} | vanished={6} | extended={13} | tc-links={14} | ui={15} | team={7} | auth={8} | safezone={9} | name={10} | expires={11}",
                 ["StatusOff"] = "SmartRadar: OFF | saved mode={0}, distance={1:0.#}m, rate={2:0.##}s.",
-                ["InvalidMode"] = "Invalid mode. Use players, stashes, tcs, or all.",
+                ["InvalidMode"] = "Invalid mode. Use players, stashes, tcs, all, or custom.",
                 ["InvalidNumber"] = "'{0}' must be a positive finite number.",
                 ["DistanceTooHigh"] = "Maximum permitted radar distance is {0:0.#}m.",
                 ["RateOutOfRange"] = "Refresh rate must be between {0:0.##} and {1:0.##} seconds.",
                 ["SettingChanged"] = "SmartRadar {0} set to {1}.",
                 ["FilterChanged"] = "SmartRadar {0} filter set to {1}.",
                 ["SettingsReset"] = "SmartRadar settings reset to defaults.",
-                ["Help"] = "SmartRadar commands:\n/radar - toggle\n/radar <players|stashes|tcs|all> [distance] [rate]\n/radar on|off|status|reset\n/radar mode <mode>\n/radar distance <meters>\n/radar rate <seconds>\n/radar for <seconds>\n/radar arrows|voice|sleepers|vanished [on|off]\n/radar filter name <text|off>\n/radar filter team <all|mine|others|solo>\n/radar filter auth <all|players|staff|moderators|owners>\n/radar filter safezone <all|inside|outside>\nLegacy: /radar <rate> <distance> <mode>",
+                ["Help"] = "SmartRadar commands:\n/radar - toggle\n/radar <players|stashes|tcs|all> [distance] [rate]\n/radar on|off|status|reset|ui\n/radar mode <mode>\n/radar layer <players|npcs|loot|stashes|tcs> [on|off]\n/radar distance <meters>\n/radar rate <seconds>\n/radar for <seconds>\n/radar arrows|voice|sleepers|vanished|extended|tclinks [on|off]\n/radar filter name <text|off>\n/radar filter team <all|mine|others|solo>\n/radar filter auth <all|players|staff|moderators|owners>\n/radar filter safezone <all|inside|outside>\n/radar findid <steamid>\n/radar buildings <twig|unprivileged>\n/radar drops [distance]\nLegacy: /radar <rate> <distance> <mode>",
                 ["VanishedUnavailable"] = "Viewing vanished players is disabled or not permitted.",
                 ["ConsolePlayerOnly"] = "SmartRadar must be controlled by an in-game player.",
                 ["DurationSet"] = "SmartRadar will automatically disable in {0:0.#} seconds.",
@@ -591,7 +682,11 @@ namespace Oxide.Plugins
                 ["VanishHelp"] = "SmartRadar vanish commands:\n/vanish - toggle\n/vanish on|off|status\n/inv <name|steamid> - inspect a player's inventory",
                 ["InventoryNoTarget"] = "No matching active or sleeping player was found for '{0}'.",
                 ["InventoryUsage"] = "Usage: /inv <name or Steam ID>, or look directly at a nearby player and use /inv.",
-                ["VanishRadarUnavailable"] = "Vanish enabled, but investigative radar could not start because its command or mode permissions are missing."
+                ["VanishRadarUnavailable"] = "Vanish enabled, but investigative radar could not start because its command or mode permissions are missing.",
+                ["ForensicCooldown"] = "Please wait {0:0.#} seconds before starting another forensic search.",
+                ["ForensicFindUsage"] = "Usage: /radar findid <Steam ID>",
+                ["ForensicBuildingUsage"] = "Usage: /radar buildings <twig|unprivileged>",
+                ["ForensicComplete"] = "Forensic drawing complete: {0} results (maximum 250, visible for 30 seconds)."
             }, this);
         }
 
@@ -647,6 +742,9 @@ namespace Oxide.Plugins
         private void Unload()
         {
             if (_dataDirty) SaveData();
+
+            foreach (BasePlayer player in BasePlayer.activePlayerList)
+                DestroyRadarUi(player);
 
             List<BasePlayer> hidden = new List<BasePlayer>();
             foreach (ulong userId in _vanishedPlayers)
@@ -739,7 +837,14 @@ namespace Oxide.Plugins
                 }
 
                 BuildingPrivlidge cupboard = networkable as BuildingPrivlidge;
-                if (cupboard != null) IndexCupboard(cupboard);
+                if (cupboard != null)
+                {
+                    IndexCupboard(cupboard);
+                    return;
+                }
+
+                BaseEntity entity = networkable as BaseEntity;
+                if (IsTrackedLoot(entity)) IndexLoot(entity);
             });
         }
 
@@ -754,7 +859,13 @@ namespace Oxide.Plugins
             }
 
             BuildingPrivlidge cupboard = networkable as BuildingPrivlidge;
-            if (cupboard != null) RemoveCupboard(cupboard);
+            if (cupboard != null)
+            {
+                RemoveCupboard(cupboard);
+                return;
+            }
+
+            RemoveLoot(networkable as BaseEntity);
         }
 
         private void OnUserPermissionRevoked(string id, string permissionName)
@@ -921,7 +1032,7 @@ namespace Oxide.Plugins
                 case "reset":
                     preferences = CreateDefaultPreferences();
                     string resetDeniedFeature;
-                    if (!CanUseMode(player, preferences.Mode, out resetDeniedFeature))
+                    if (!CanUsePreferences(player, preferences, out resetDeniedFeature))
                     {
                         string permittedMode = GetFirstPermittedMode(player);
                         if (permittedMode == null)
@@ -930,6 +1041,7 @@ namespace Oxide.Plugins
                             return;
                         }
                         preferences.Mode = permittedMode;
+                        ApplyModePreset(preferences, permittedMode);
                     }
                     preferences.Distance = Mathf.Min(preferences.Distance, HasPermission(player, PermExtendedRange)
                         ? _config.General.MaximumExtendedDistance
@@ -938,12 +1050,29 @@ namespace Oxide.Plugins
                     if (session != null) session.Preferences = preferences;
                     MarkPreferencesChanged(session);
                     RefreshVoiceWatcherCount();
+                    if (session != null) ShowRadarUi(player, session);
                     Reply(player, "SettingsReset");
                     return;
                 case "mode":
                     if (args.Length < 2 || !TrySetMode(player, preferences, args[1])) return;
                     MarkPreferencesChanged(session);
+                    if (session != null) ShowRadarUi(player, session);
                     Reply(player, "SettingChanged", "mode", preferences.Mode);
+                    return;
+                case "ui":
+                    if (!HasPermission(player, PermUi))
+                    {
+                        Reply(player, "FeaturePermission", "ui");
+                        return;
+                    }
+                    preferences.ShowUi = !(preferences.ShowUi ?? true);
+                    MarkPreferencesChanged(session);
+                    if (session != null)
+                    {
+                        if (preferences.ShowUi == true) ShowRadarUi(player, session);
+                        else DestroyRadarUi(player);
+                    }
+                    Reply(player, "SettingChanged", "ui", preferences.ShowUi == true ? "on" : "off");
                     return;
                 case "distance":
                     if (args.Length < 2 || !TrySetDistance(player, preferences, args[1])) return;
@@ -967,6 +1096,15 @@ namespace Oxide.Plugins
                 case "sleepers":
                     TogglePreference(player, preferences, session, args, "sleepers", PermSleepers, delegate(bool value) { preferences.ShowSleepers = value; }, preferences.ShowSleepers);
                     return;
+                case "layer":
+                    HandleLayerCommand(player, preferences, session, args);
+                    return;
+                case "extended":
+                    TogglePreference(player, preferences, session, args, "extended", PermExtended, delegate(bool value) { preferences.ShowExtended = value; }, preferences.ShowExtended);
+                    return;
+                case "tclinks":
+                    TogglePreference(player, preferences, session, args, "tc links", PermTcInfo, delegate(bool value) { preferences.ShowTcLinks = value; }, preferences.ShowTcLinks);
+                    return;
                 case "vanished":
                     if (!HasPermission(player, PermSeeVanished))
                     {
@@ -977,6 +1115,15 @@ namespace Oxide.Plugins
                     return;
                 case "filter":
                     HandleFilterCommand(player, preferences, session, args);
+                    return;
+                case "findid":
+                    StartFindById(player, args);
+                    return;
+                case "buildings":
+                    StartBuildingSearch(player, args);
+                    return;
+                case "drops":
+                    DrawForensicDrops(player, preferences, args);
                     return;
             }
 
@@ -1092,7 +1239,214 @@ namespace Oxide.Plugins
             setter(next);
             MarkPreferencesChanged(session);
             if (label == "voice") RefreshVoiceWatcherCount();
+            if (session != null) ShowRadarUi(player, session);
             Reply(player, "SettingChanged", label, next ? "on" : "off");
+        }
+
+        private void ToggleLayerPreference(BasePlayer player, RadarPreferences preferences, RadarSession session, string[] args,
+            string label, string requiredPermission, bool current, Action<bool> setter)
+        {
+            if (!HasPermission(player, requiredPermission))
+            {
+                Reply(player, "FeaturePermission", label);
+                return;
+            }
+
+            bool next;
+            if (args.Length < 2) next = !current;
+            else if (!TryParseToggle(args[1], current, out next))
+            {
+                Reply(player, "Help");
+                return;
+            }
+
+            setter(next);
+            preferences.Mode = ModeCustom;
+            MarkPreferencesChanged(session);
+            if (session != null) ShowRadarUi(player, session);
+            Reply(player, "SettingChanged", label, next ? "on" : "off");
+        }
+
+        private void HandleLayerCommand(BasePlayer player, RadarPreferences preferences, RadarSession session, string[] args)
+        {
+            if (args.Length < 2)
+            {
+                Reply(player, "Help");
+                return;
+            }
+
+            string[] toggleArgs = new string[args.Length - 1];
+            Array.Copy(args, 1, toggleArgs, 0, toggleArgs.Length);
+            switch (args[1].ToLowerInvariant())
+            {
+                case "players":
+                    ToggleLayerPreference(player, preferences, session, toggleArgs, "players", PermPlayers, LayerPlayers(preferences), delegate(bool value) { preferences.PlayersLayer = value; });
+                    return;
+                case "npcs":
+                    ToggleLayerPreference(player, preferences, session, toggleArgs, "npcs", PermNpcs, LayerNpcs(preferences), delegate(bool value) { preferences.NpcsLayer = value; });
+                    return;
+                case "loot":
+                    ToggleLayerPreference(player, preferences, session, toggleArgs, "loot", PermLoot, LayerLoot(preferences), delegate(bool value) { preferences.LootLayer = value; });
+                    return;
+                case "stashes":
+                    ToggleLayerPreference(player, preferences, session, toggleArgs, "stashes", PermStashes, LayerStashes(preferences), delegate(bool value) { preferences.StashesLayer = value; });
+                    return;
+                case "tc":
+                case "tcs":
+                case "cupboards":
+                    ToggleLayerPreference(player, preferences, session, toggleArgs, "tcs", PermCupboards, LayerCupboards(preferences), delegate(bool value) { preferences.CupboardsLayer = value; });
+                    return;
+            }
+            Reply(player, "Help");
+        }
+
+        [ConsoleCommand("smartradar.ui")]
+        private void CommandRadarUi(ConsoleSystem.Arg arg)
+        {
+            BasePlayer player = arg == null ? null : arg.Player();
+            if (player == null || !HasPermission(player, PermUse) || !HasPermission(player, PermUi)) return;
+
+            RadarSession session;
+            if (!_sessions.TryGetValue(player.userID, out session) || session == null) return;
+
+            string action = arg.GetString(0, string.Empty).ToLowerInvariant();
+            if (action == "close")
+            {
+                session.Preferences.ShowUi = false;
+                MarkPreferencesChanged(session);
+                DestroyRadarUi(player);
+                return;
+            }
+
+            RadarPreferences preferences = session.Preferences;
+            switch (action)
+            {
+                case "players":
+                    if (!HasPermission(player, PermPlayers)) return;
+                    preferences.PlayersLayer = !LayerPlayers(preferences);
+                    preferences.Mode = ModeCustom;
+                    break;
+                case "npcs":
+                    if (!HasPermission(player, PermNpcs)) return;
+                    preferences.NpcsLayer = !LayerNpcs(preferences);
+                    break;
+                case "loot":
+                    if (!HasPermission(player, PermLoot)) return;
+                    preferences.LootLayer = !LayerLoot(preferences);
+                    break;
+                case "stashes":
+                    if (!HasPermission(player, PermStashes)) return;
+                    preferences.StashesLayer = !LayerStashes(preferences);
+                    preferences.Mode = ModeCustom;
+                    break;
+                case "tcs":
+                    if (!HasPermission(player, PermCupboards)) return;
+                    preferences.CupboardsLayer = !LayerCupboards(preferences);
+                    preferences.Mode = ModeCustom;
+                    break;
+                case "sleepers":
+                    if (!HasPermission(player, PermSleepers)) return;
+                    preferences.ShowSleepers = !preferences.ShowSleepers;
+                    if (preferences.ShowSleepers) _nextSleeperIndexRebuild = 0f;
+                    break;
+                case "vision":
+                    if (!HasPermission(player, PermArrows)) return;
+                    bool visionEnabled = preferences.ShowArrows || session.ForcedArrows;
+                    session.ForcedArrows = false;
+                    preferences.ShowArrows = !visionEnabled;
+                    break;
+                case "extended":
+                    if (!HasPermission(player, PermExtended)) return;
+                    preferences.ShowExtended = !preferences.ShowExtended;
+                    break;
+                case "tclinks":
+                    if (!HasPermission(player, PermTcInfo)) return;
+                    preferences.ShowTcLinks = !preferences.ShowTcLinks;
+                    break;
+                case "voice":
+                    if (!HasPermission(player, PermVoice)) return;
+                    preferences.ShowVoice = !preferences.ShowVoice;
+                    RefreshVoiceWatcherCount();
+                    break;
+                default:
+                    return;
+            }
+
+            MarkPreferencesChanged(session);
+            if (HasPlayerLayers(preferences)) _nextPlayerIndexRebuild = 0f;
+            ShowRadarUi(player, session);
+        }
+
+        private void ShowRadarUi(BasePlayer player, RadarSession session)
+        {
+            DestroyRadarUi(player);
+            if (player == null || session == null || !_config.UserInterface.Enabled || session.Preferences.ShowUi != true ||
+                !HasPermission(player, PermUi)) return;
+
+            UserInterfaceSettings settings = _config.UserInterface;
+            CuiElementContainer elements = new CuiElementContainer();
+            elements.Add(new CuiPanel
+            {
+                Image = { Color = settings.PanelColor },
+                RectTransform = { AnchorMin = settings.AnchorMin, AnchorMax = settings.AnchorMax },
+                CursorEnabled = false
+            }, "Hud", RadarUiName);
+
+            elements.Add(new CuiLabel
+            {
+                Text = { Text = "SMART INVESTIGATION", FontSize = 14, Align = TextAnchor.MiddleLeft, Color = settings.TextColor },
+                RectTransform = { AnchorMin = "0.06 0.895", AnchorMax = "0.84 0.985" }
+            }, RadarUiName);
+            elements.Add(new CuiLabel
+            {
+                Text = { Text = (IsBuiltInVanished(player) ? "VANISH ON" : "VANISH OFF") + "  •  RADAR ON", FontSize = 10, Align = TextAnchor.MiddleLeft, Color = settings.AccentColor },
+                RectTransform = { AnchorMin = "0.06 0.83", AnchorMax = "0.92 0.90" }
+            }, RadarUiName);
+            elements.Add(new CuiButton
+            {
+                Button = { Color = "0 0 0 0", Command = "smartradar.ui close" },
+                RectTransform = { AnchorMin = "0.86 0.91", AnchorMax = "0.97 0.98" },
+                Text = { Text = "×", FontSize = 17, Align = TextAnchor.MiddleCenter, Color = settings.TextColor }
+            }, RadarUiName);
+
+            AddUiToggle(elements, "PLAYERS", "players", LayerPlayers(session.Preferences), 0, 0, settings);
+            AddUiToggle(elements, "NPCS", "npcs", LayerNpcs(session.Preferences), 0, 1, settings);
+            AddUiToggle(elements, "LOOT", "loot", LayerLoot(session.Preferences), 1, 0, settings);
+            AddUiToggle(elements, "STASHES", "stashes", LayerStashes(session.Preferences), 1, 1, settings);
+            AddUiToggle(elements, "TOOL CUPBOARDS", "tcs", LayerCupboards(session.Preferences), 2, 0, settings);
+            AddUiToggle(elements, "SLEEPERS", "sleepers", session.Preferences.ShowSleepers, 2, 1, settings);
+            AddUiToggle(elements, "VISION / ARROWS", "vision", session.Preferences.ShowArrows || session.ForcedArrows, 3, 0, settings);
+            AddUiToggle(elements, "EXTENDED INFO", "extended", session.Preferences.ShowExtended, 3, 1, settings);
+            AddUiToggle(elements, "TC LINKS", "tclinks", session.Preferences.ShowTcLinks, 4, 0, settings);
+            AddUiToggle(elements, "VOICE", "voice", session.Preferences.ShowVoice, 4, 1, settings);
+
+            elements.Add(new CuiLabel
+            {
+                Text = { Text = "Open inventory to click • /radar ui hides panel", FontSize = 9, Align = TextAnchor.MiddleCenter, Color = "0.62 0.68 0.72 1" },
+                RectTransform = { AnchorMin = "0.04 0.015", AnchorMax = "0.96 0.095" }
+            }, RadarUiName);
+            CuiHelper.AddUi(player, elements);
+        }
+
+        private static void AddUiToggle(CuiElementContainer elements, string label, string action, bool enabled, int row, int column, UserInterfaceSettings settings)
+        {
+            const float top = 0.80f;
+            const float rowHeight = 0.13f;
+            float yMax = top - row * rowHeight;
+            float yMin = yMax - 0.095f;
+            float xMin = column == 0 ? 0.05f : 0.515f;
+            float xMax = column == 0 ? 0.485f : 0.95f;
+            elements.Add(new CuiButton
+            {
+                Button = { Color = enabled ? settings.EnabledColor : settings.DisabledColor, Command = "smartradar.ui " + action },
+                RectTransform = { AnchorMin = xMin.ToString("0.###", CultureInfo.InvariantCulture) + " " + yMin.ToString("0.###", CultureInfo.InvariantCulture), AnchorMax = xMax.ToString("0.###", CultureInfo.InvariantCulture) + " " + yMax.ToString("0.###", CultureInfo.InvariantCulture) },
+                Text = { Text = (enabled ? "●  " : "○  ") + label, FontSize = 10, Align = TextAnchor.MiddleCenter, Color = settings.TextColor }
+            }, RadarUiName);
+        }
+
+        private static void DestroyRadarUi(BasePlayer player)
+        {
+            if (player != null) CuiHelper.DestroyUi(player, RadarUiName);
         }
 
         private void SetTemporaryDuration(BasePlayer player, RadarPreferences preferences, RadarSession session, string[] args)
@@ -1118,6 +1472,121 @@ namespace Oxide.Plugins
             Reply(player, "DurationSet", seconds);
         }
 
+        private bool CanRunForensics(BasePlayer player)
+        {
+            if (!HasPermission(player, PermForensics))
+            {
+                Reply(player, "FeaturePermission", "forensics");
+                return false;
+            }
+            float now = Time.realtimeSinceStartup;
+            float availableAt;
+            if (_forensicCooldowns.TryGetValue(player.userID, out availableAt) && now < availableAt)
+            {
+                Reply(player, "ForensicCooldown", availableAt - now);
+                return false;
+            }
+            _forensicCooldowns[player.userID] = now + 10f;
+            return true;
+        }
+
+        private void StartFindById(BasePlayer player, string[] args)
+        {
+            ulong userId;
+            if (args.Length < 2 || !ulong.TryParse(args[1], out userId))
+            {
+                Reply(player, "ForensicFindUsage");
+                return;
+            }
+            if (!CanRunForensics(player)) return;
+            ServerMgr.Instance.StartCoroutine(FindByIdRoutine(player, userId));
+        }
+
+        private IEnumerator FindByIdRoutine(BasePlayer viewer, ulong userId)
+        {
+            List<BaseNetworkable> snapshot = new List<BaseNetworkable>();
+            foreach (BaseNetworkable networkable in BaseNetworkable.serverEntities) snapshot.Add(networkable);
+            int found = 0;
+            for (int inspected = 0; inspected < snapshot.Count; inspected++)
+            {
+                if (viewer == null || !viewer.IsConnected) yield break;
+                BaseNetworkable networkable = snapshot[inspected];
+                BaseEntity entity = networkable as BaseEntity;
+                if (entity != null && !entity.IsDestroyed && IsEntityAssociatedWithUser(entity, userId))
+                {
+                    viewer.SendConsoleCommand("ddraw.text", 30f, Color.cyan, entity.transform.position + Vector3.up,
+                        "<size=13><color=#7BDFF2>ID MATCH</color> " + EscapeRichText(entity.ShortPrefabName) + "</size>");
+                    if (++found >= 250) break;
+                }
+                if ((inspected + 1) % 200 == 0) yield return null;
+            }
+            if (viewer != null && viewer.IsConnected) Reply(viewer, "ForensicComplete", found);
+        }
+
+        private static bool IsEntityAssociatedWithUser(BaseEntity entity, ulong userId)
+        {
+            if (entity.OwnerID == userId) return true;
+            BuildingPrivlidge cupboard = entity as BuildingPrivlidge;
+            if (cupboard != null && cupboard.authorizedPlayers != null && cupboard.authorizedPlayers.Contains(userId)) return true;
+            SleepingBag bag = entity as SleepingBag;
+            if (bag != null && bag.deployerUserID == userId) return true;
+            CodeLock codeLock = entity as CodeLock;
+            return codeLock != null && codeLock.whitelistPlayers != null && codeLock.whitelistPlayers.Contains(userId);
+        }
+
+        private void StartBuildingSearch(BasePlayer player, string[] args)
+        {
+            string filter = args.Length > 1 ? args[1].ToLowerInvariant() : "twig";
+            if (filter != "twig" && filter != "unprivileged")
+            {
+                Reply(player, "ForensicBuildingUsage");
+                return;
+            }
+            if (!CanRunForensics(player)) return;
+            ServerMgr.Instance.StartCoroutine(BuildingSearchRoutine(player, filter));
+        }
+
+        private IEnumerator BuildingSearchRoutine(BasePlayer viewer, string filter)
+        {
+            List<BaseNetworkable> snapshot = new List<BaseNetworkable>();
+            foreach (BaseNetworkable networkable in BaseNetworkable.serverEntities) snapshot.Add(networkable);
+            int found = 0;
+            for (int inspected = 0; inspected < snapshot.Count; inspected++)
+            {
+                if (viewer == null || !viewer.IsConnected) yield break;
+                BaseNetworkable networkable = snapshot[inspected];
+                BuildingBlock block = networkable as BuildingBlock;
+                if (block != null && !block.IsDestroyed)
+                {
+                    bool match = filter == "twig"
+                        ? block.grade == BuildingGrade.Enum.Twigs
+                        : block.GetBuildingPrivilege() == null;
+                    if (match)
+                    {
+                        viewer.SendConsoleCommand("ddraw.text", 30f, Color.yellow, block.transform.position + Vector3.up,
+                            "<size=13><color=#F2C94C>" + filter.ToUpperInvariant() + " BUILDING</color></size>");
+                        if (++found >= 250) break;
+                    }
+                }
+                if ((inspected + 1) % 200 == 0) yield return null;
+            }
+            if (viewer != null && viewer.IsConnected) Reply(viewer, "ForensicComplete", found);
+        }
+
+        private void DrawForensicDrops(BasePlayer viewer, RadarPreferences preferences, string[] args)
+        {
+            float distance = preferences.Distance;
+            if (args.Length > 1 && (!TryParsePositiveFloat(args[1], out distance) || distance > _config.General.MaximumExtendedDistance))
+            {
+                Reply(viewer, "InvalidNumber", "distance");
+                return;
+            }
+            if (!CanRunForensics(viewer)) return;
+            if (!HasPermission(viewer, PermExtendedRange)) distance = Mathf.Min(distance, _config.General.MaximumStandardDistance);
+            int found = DrawLoot(viewer, GetRadarOrigin(viewer), distance, 30f, Mathf.Min(250, _config.Limits.MaximumDrawCommandsPerCycle));
+            Reply(viewer, "ForensicComplete", found);
+        }
+
         private bool TrySetMode(BasePlayer player, RadarPreferences preferences, string input)
         {
             string mode = NormalizeMode(input);
@@ -1135,6 +1604,7 @@ namespace Oxide.Plugins
             }
 
             preferences.Mode = mode;
+            ApplyModePreset(preferences, mode);
             return true;
         }
 
@@ -1224,6 +1694,14 @@ namespace Oxide.Plugins
                 ShowVoice = source.ShowVoice,
                 ShowSleepers = source.ShowSleepers,
                 ShowVanished = source.ShowVanished,
+                PlayersLayer = source.PlayersLayer,
+                StashesLayer = source.StashesLayer,
+                CupboardsLayer = source.CupboardsLayer,
+                NpcsLayer = source.NpcsLayer,
+                LootLayer = source.LootLayer,
+                ShowExtended = source.ShowExtended,
+                ShowTcLinks = source.ShowTcLinks,
+                ShowUi = source.ShowUi,
                 NameFilter = source.NameFilter,
                 TeamFilter = source.TeamFilter,
                 AuthorizationFilter = source.AuthorizationFilter,
@@ -1240,6 +1718,14 @@ namespace Oxide.Plugins
             destination.ShowVoice = source.ShowVoice;
             destination.ShowSleepers = source.ShowSleepers;
             destination.ShowVanished = source.ShowVanished;
+            destination.PlayersLayer = source.PlayersLayer;
+            destination.StashesLayer = source.StashesLayer;
+            destination.CupboardsLayer = source.CupboardsLayer;
+            destination.NpcsLayer = source.NpcsLayer;
+            destination.LootLayer = source.LootLayer;
+            destination.ShowExtended = source.ShowExtended;
+            destination.ShowTcLinks = source.ShowTcLinks;
+            destination.ShowUi = source.ShowUi;
             destination.NameFilter = source.NameFilter;
             destination.TeamFilter = source.TeamFilter;
             destination.AuthorizationFilter = source.AuthorizationFilter;
@@ -1268,8 +1754,9 @@ namespace Oxide.Plugins
 
         private void StartRadar(BasePlayer player, RadarPreferences preferences, bool notify)
         {
+            NormalizePreferences(preferences);
             string deniedFeature;
-            if (!CanUseMode(player, preferences.Mode, out deniedFeature))
+            if (!CanUsePreferences(player, preferences, out deniedFeature))
             {
                 Reply(player, "FeaturePermission", deniedFeature);
                 return;
@@ -1279,13 +1766,14 @@ namespace Oxide.Plugins
                 ? _config.General.MaximumExtendedDistance
                 : _config.General.MaximumStandardDistance;
             if (preferences.Distance > maximumDistance) preferences.Distance = maximumDistance;
-            NormalizePreferences(preferences);
 
             RadarSession session;
+            bool newlyStarted = false;
             if (!_sessions.TryGetValue(player.userID, out session))
             {
                 session = new RadarSession { Viewer = player, Preferences = preferences };
                 _sessions[player.userID] = session;
+                newlyStarted = true;
             }
             else
             {
@@ -1299,21 +1787,25 @@ namespace Oxide.Plugins
             session.ExpiresAt = 0f;
             session.StartedByVanish = false;
             session.ForcedArrows = false;
-            if (ModeIncludesPlayers(preferences.Mode)) _nextPlayerIndexRebuild = 0f;
+            if (HasPlayerLayers(preferences)) _nextPlayerIndexRebuild = 0f;
             if (preferences.ShowSleepers) _nextSleeperIndexRebuild = 0f;
             RefreshVoiceWatcherCount();
+            if (_config.UserInterface.ShowOnRadarStart) ShowRadarUi(player, session);
 
             if (_config.General.LogUsage)
                 Puts(player.displayName + " (" + player.UserIDString + ") enabled SmartRadar in " + preferences.Mode + " mode.");
 
             if (notify) Reply(player, "Enabled", preferences.Mode, preferences.Distance, preferences.RefreshRate);
+            if (newlyStarted) Interface.CallHook("OnSmartRadarActivated", player);
         }
 
         private void StopRadar(BasePlayer player, bool notify)
         {
             if (player == null) return;
             bool removed = _sessions.Remove(player.userID);
+            DestroyRadarUi(player);
             if (removed) RefreshVoiceWatcherCount();
+            if (removed) Interface.CallHook("OnSmartRadarDeactivated", player);
             if (removed && _config.General.LogUsage)
                 Puts(player.displayName + " (" + player.UserIDString + ") disabled SmartRadar.");
 
@@ -1341,7 +1833,22 @@ namespace Oxide.Plugins
                 preferences.AuthorizationFilter,
                 preferences.SafeZoneFilter,
                 string.IsNullOrEmpty(preferences.NameFilter) ? "off" : preferences.NameFilter,
-                session.ExpiresAt > 0f ? Mathf.Max(0f, session.ExpiresAt - Time.realtimeSinceStartup).ToString("0.#", CultureInfo.InvariantCulture) + "s" : "off");
+                session.ExpiresAt > 0f ? Mathf.Max(0f, session.ExpiresAt - Time.realtimeSinceStartup).ToString("0.#", CultureInfo.InvariantCulture) + "s" : "off",
+                BuildLayerStatus(preferences),
+                preferences.ShowExtended ? "on" : "off",
+                preferences.ShowTcLinks ? "on" : "off",
+                preferences.ShowUi == true ? "on" : "off");
+        }
+
+        private static string BuildLayerStatus(RadarPreferences preferences)
+        {
+            List<string> enabled = new List<string>(5);
+            if (LayerPlayers(preferences)) enabled.Add("players");
+            if (LayerNpcs(preferences)) enabled.Add("npcs");
+            if (LayerLoot(preferences)) enabled.Add("loot");
+            if (LayerStashes(preferences)) enabled.Add("stashes");
+            if (LayerCupboards(preferences)) enabled.Add("tcs");
+            return enabled.Count == 0 ? "none" : string.Join(",", enabled.ToArray());
         }
 
         private void SchedulerTick()
@@ -1390,7 +1897,7 @@ namespace Oxide.Plugins
                 }
 
                 string deniedFeature;
-                if (!CanUseMode(viewer, session.Preferences.Mode, out deniedFeature))
+                if (!CanUsePreferences(viewer, session.Preferences, out deniedFeature))
                 {
                     Reply(viewer, "FeaturePermission", deniedFeature);
                     _sessionRemovalBuffer.Add(pair.Key);
@@ -1406,8 +1913,8 @@ namespace Oxide.Plugins
                     _dataDirty = true;
                 }
 
-                bool playerDue = ModeIncludesPlayers(session.Preferences.Mode) && now >= session.NextPlayerUpdate;
-                bool staticDue = ModeIncludesStatic(session.Preferences.Mode) && now >= session.NextStaticUpdate;
+                bool playerDue = HasPlayerLayers(session.Preferences) && now >= session.NextPlayerUpdate;
+                bool staticDue = HasStaticLayers(session.Preferences) && now >= session.NextStaticUpdate;
                 if (!playerDue && !staticDue) continue;
                 if (updatedSessions >= _config.Scheduler.MaximumSessionsPerTick) continue;
 
@@ -1428,7 +1935,12 @@ namespace Oxide.Plugins
             }
 
             for (int i = 0; i < _sessionRemovalBuffer.Count; i++)
+            {
+                RadarSession removedSession;
+                if (_sessions.TryGetValue(_sessionRemovalBuffer[i], out removedSession) && removedSession != null)
+                    DestroyRadarUi(removedSession.Viewer);
                 _sessions.Remove(_sessionRemovalBuffer[i]);
+            }
 
             if (_sessionRemovalBuffer.Count > 0) RefreshVoiceWatcherCount();
 
@@ -1443,7 +1955,7 @@ namespace Oxide.Plugins
         {
             foreach (RadarSession session in _sessions.Values)
             {
-                if (session != null && ModeIncludesPlayers(session.Preferences.Mode)) return true;
+                if (session != null && HasPlayerLayers(session.Preferences)) return true;
             }
             return false;
         }
@@ -1452,7 +1964,7 @@ namespace Oxide.Plugins
         {
             foreach (RadarSession session in _sessions.Values)
             {
-                if (session != null && ModeIncludesPlayers(session.Preferences.Mode) && session.Preferences.ShowSleepers) return true;
+                if (session != null && LayerPlayers(session.Preferences) && session.Preferences.ShowSleepers) return true;
             }
             return false;
         }
@@ -1526,7 +2038,7 @@ namespace Oxide.Plugins
             _activePlayerIndex.Clear();
             foreach (BasePlayer player in BasePlayer.activePlayerList)
             {
-                if (player == null || !player.IsConnected) continue;
+                if (player == null || (!player.IsConnected && !(player is NPCPlayer))) continue;
                 AddToIndex(_activePlayerIndex, GetCellKey(player.transform.position), player);
             }
         }
@@ -1545,8 +2057,10 @@ namespace Oxide.Plugins
         {
             _stashIndex.Clear();
             _cupboardIndex.Clear();
+            _lootIndex.Clear();
             _stashCells.Clear();
             _cupboardCells.Clear();
+            _lootCells.Clear();
 
             foreach (BaseNetworkable networkable in BaseNetworkable.serverEntities)
             {
@@ -1559,7 +2073,14 @@ namespace Oxide.Plugins
                 }
 
                 BuildingPrivlidge cupboard = networkable as BuildingPrivlidge;
-                if (cupboard != null) IndexCupboard(cupboard);
+                if (cupboard != null)
+                {
+                    IndexCupboard(cupboard);
+                    continue;
+                }
+
+                BaseEntity entity = networkable as BaseEntity;
+                if (IsTrackedLoot(entity)) IndexLoot(entity);
             }
         }
 
@@ -1579,6 +2100,20 @@ namespace Oxide.Plugins
             long cell = GetCellKey(cupboard.transform.position);
             AddToIndex(_cupboardIndex, cell, cupboard);
             _cupboardCells[cupboard.GetInstanceID()] = cell;
+        }
+
+        private void IndexLoot(BaseEntity entity)
+        {
+            if (!IsTrackedLoot(entity) || entity.IsDestroyed) return;
+            RemoveLoot(entity);
+            long cell = GetCellKey(entity.transform.position);
+            AddToIndex(_lootIndex, cell, entity);
+            _lootCells[entity.GetInstanceID()] = cell;
+        }
+
+        private static bool IsTrackedLoot(BaseEntity entity)
+        {
+            return entity is DroppedItem || entity is DroppedItemContainer || entity is LootContainer || entity is PlayerCorpse;
         }
 
         private void RemoveStash(StashContainer stash)
@@ -1611,14 +2146,31 @@ namespace Oxide.Plugins
             _cupboardCells.Remove(id);
         }
 
+        private void RemoveLoot(BaseEntity entity)
+        {
+            if (ReferenceEquals(entity, null)) return;
+            int id = entity.GetInstanceID();
+            long cell;
+            if (!_lootCells.TryGetValue(id, out cell)) return;
+            List<BaseEntity> list;
+            if (_lootIndex.TryGetValue(cell, out list))
+            {
+                list.Remove(entity);
+                if (list.Count == 0) _lootIndex.Remove(cell);
+            }
+            _lootCells.Remove(id);
+        }
+
         private void ClearIndexes()
         {
             _activePlayerIndex.Clear();
             _sleepingPlayerIndex.Clear();
             _stashIndex.Clear();
             _cupboardIndex.Clear();
+            _lootIndex.Clear();
             _stashCells.Clear();
             _cupboardCells.Clear();
+            _lootCells.Clear();
         }
 
         #endregion
@@ -1642,7 +2194,7 @@ namespace Oxide.Plugins
         {
             BasePlayer viewer = session.Viewer;
             RadarPreferences preferences = session.Preferences;
-            if (!HasPermission(viewer, PermPlayers)) return 0;
+            if (!HasPlayerLayers(preferences)) return 0;
 
             _playerCandidates.Clear();
             BasePlayer spectatingTarget = GetSpectatingTarget(viewer);
@@ -1655,7 +2207,7 @@ namespace Oxide.Plugins
             GetCellBounds(origin, preferences.Distance, out minX, out maxX, out minZ, out maxZ);
 
             CollectPlayerCandidates(_activePlayerIndex, viewer, preferences, origin, radiusSqr, false, ignoredTargetId, minX, maxX, minZ, maxZ);
-            if (preferences.ShowSleepers && HasPermission(viewer, PermSleepers))
+            if (LayerPlayers(preferences) && preferences.ShowSleepers && HasPermission(viewer, PermSleepers))
                 CollectPlayerCandidates(_sleepingPlayerIndex, viewer, preferences, origin, radiusSqr, true, ignoredTargetId, minX, maxX, minZ, maxZ);
 
             _playerCandidates.Sort(ComparePlayerCandidates);
@@ -1693,6 +2245,9 @@ namespace Oxide.Plugins
                         _config.Display.ArrowHeadRadius, _config.Display.DistanceFade, _config.Display.DepthTest, target.net.ID);
                     draws++;
                 }
+
+                if (preferences.ShowTcLinks && HasPermission(viewer, PermTcInfo) && draws < budget)
+                    draws += DrawNearestAuthorizedCupboardLink(viewer, target, lifetime, budget - draws);
             }
 
             return draws;
@@ -1735,8 +2290,13 @@ namespace Oxide.Plugins
         private bool ShouldIncludePlayer(BasePlayer viewer, BasePlayer target, RadarPreferences preferences, bool sleeping, ulong ignoredTargetId)
         {
             if (target == null || target.userID == viewer.userID || target.userID == ignoredTargetId) return false;
-            if (!sleeping && !target.IsConnected) return false;
-            if (!_config.Display.IncludeNpcPlayers && target is NPCPlayer) return false;
+            if (!sleeping && !target.IsConnected && !(target is NPCPlayer)) return false;
+            bool npc = target is NPCPlayer;
+            if (npc)
+            {
+                if (!_config.Display.IncludeNpcPlayers || !LayerNpcs(preferences) || !HasPermission(viewer, PermNpcs)) return false;
+            }
+            else if (!LayerPlayers(preferences) || !HasPermission(viewer, PermPlayers)) return false;
 
             if (!string.IsNullOrEmpty(preferences.NameFilter) &&
                 target.displayName.IndexOf(preferences.NameFilter, StringComparison.OrdinalIgnoreCase) < 0)
@@ -1786,8 +2346,39 @@ namespace Oxide.Plugins
             if (candidate.Vanished && _config.Privacy.MarkVanishedPlayers)
                 _labelBuilder.Append(" | <color=#B76CFF>[V]</color>");
 
+            if (preferences.ShowExtended && HasPermission(viewer, PermExtended))
+                AppendExtendedPlayerInfo(target);
+
             _labelBuilder.Append("</size>");
             return _labelBuilder.ToString();
+        }
+
+        private void AppendExtendedPlayerInfo(BasePlayer target)
+        {
+            Item activeItem = target.GetActiveItem();
+            if (activeItem == null || activeItem.info == null) return;
+
+            string itemName = activeItem.info.displayName == null
+                ? activeItem.info.shortname
+                : activeItem.info.displayName.english;
+            _labelBuilder.Append("\n<size=12><color=#7BDFF2>HELD</color> ").Append(EscapeRichText(itemName));
+
+            if (activeItem.contents != null && activeItem.contents.itemList != null && activeItem.contents.itemList.Count > 0)
+            {
+                _labelBuilder.Append(" <color=#AAB8C2>[");
+                int shown = 0;
+                for (int i = 0; i < activeItem.contents.itemList.Count && shown < 3; i++)
+                {
+                    Item attachment = activeItem.contents.itemList[i];
+                    if (attachment == null || attachment.info == null) continue;
+                    if (shown++ > 0) _labelBuilder.Append(", ");
+                    _labelBuilder.Append(EscapeRichText(attachment.info.displayName == null
+                        ? attachment.info.shortname
+                        : attachment.info.displayName.english));
+                }
+                _labelBuilder.Append("]</color>");
+            }
+            _labelBuilder.Append("</size>");
         }
 
         private static string GetPlayerState(BasePlayer target, bool sleeping)
@@ -1819,19 +2410,26 @@ namespace Oxide.Plugins
             return left.SqrDistance.CompareTo(right.SqrDistance);
         }
 
+        private static int CompareLootCandidates(StaticCandidate<BaseEntity> left, StaticCandidate<BaseEntity> right)
+        {
+            return left.SqrDistance.CompareTo(right.SqrDistance);
+        }
+
         private int DrawStaticRadar(RadarSession session, int budget)
         {
             int draws = 0;
-            string mode = session.Preferences.Mode;
             Vector3 origin = GetRadarOrigin(session.Viewer);
             float radius = session.Preferences.Distance;
             float lifetime = Mathf.Max(session.Preferences.RefreshRate, _config.Scheduler.MinimumStaticRefresh) + _config.Scheduler.DrawingLifetimePadding;
 
-            if ((mode == ModeStashes || mode == ModeAll) && HasPermission(session.Viewer, PermStashes) && draws < budget)
+            if (LayerStashes(session.Preferences) && HasPermission(session.Viewer, PermStashes) && draws < budget)
                 draws += DrawStashes(session.Viewer, origin, radius, lifetime, budget - draws);
 
-            if ((mode == ModeCupboards || mode == ModeAll) && HasPermission(session.Viewer, PermCupboards) && draws < budget)
-                draws += DrawCupboards(session.Viewer, origin, radius, lifetime, budget - draws);
+            if (LayerCupboards(session.Preferences) && HasPermission(session.Viewer, PermCupboards) && draws < budget)
+                draws += DrawCupboards(session.Viewer, session.Preferences, origin, radius, lifetime, budget - draws);
+
+            if (LayerLoot(session.Preferences) && HasPermission(session.Viewer, PermLoot) && draws < budget)
+                draws += DrawLoot(session.Viewer, origin, radius, lifetime, budget - draws);
 
             return draws;
         }
@@ -1859,7 +2457,7 @@ namespace Oxide.Plugins
             return draws;
         }
 
-        private int DrawCupboards(BasePlayer viewer, Vector3 origin, float radius, float lifetime, int budget)
+        private int DrawCupboards(BasePlayer viewer, RadarPreferences preferences, Vector3 origin, float radius, float lifetime, int budget)
         {
             _cupboardCandidates.Clear();
             CollectStaticCandidates(_cupboardIndex, _cupboardCandidates, origin, radius);
@@ -1872,13 +2470,68 @@ namespace Oxide.Plugins
                 StaticCandidate<BuildingPrivlidge> candidate = _cupboardCandidates[i];
                 BuildingPrivlidge cupboard = candidate.Entity;
                 if (cupboard == null || cupboard.IsDestroyed) continue;
+                string details = string.Empty;
+                if ((preferences.ShowExtended || preferences.ShowTcLinks) && HasPermission(viewer, PermTcInfo))
+                    details = " | <color=#B9CAD3>AUTH " + (cupboard.authorizedPlayers == null ? 0 : cupboard.authorizedPlayers.Count) + "</color>";
                 string label = "<size=14><color=#05F5E5>TC</color> | <color=#2F6FFF>" +
-                    Mathf.RoundToInt(Mathf.Sqrt(candidate.SqrDistance)) + "</color>M</size>";
+                    Mathf.RoundToInt(Mathf.Sqrt(candidate.SqrDistance)) + "</color>M" + details + "</size>";
                 viewer.SendConsoleCommand("ddraw.text", lifetime, _cupboardDrawColor,
                     cupboard.transform.position + Vector3.up * _config.Display.StaticLabelHeight, label);
                 draws++;
             }
             return draws;
+        }
+
+        private int DrawNearestAuthorizedCupboardLink(BasePlayer viewer, BasePlayer target, float lifetime, int budget)
+        {
+            if (budget <= 0 || target == null) return 0;
+            _cupboardCandidates.Clear();
+            CollectStaticCandidates(_cupboardIndex, _cupboardCandidates, target.transform.position, Mathf.Min(150f, _config.General.MaximumStandardDistance));
+            _cupboardCandidates.Sort(CompareCupboardCandidates);
+            for (int i = 0; i < _cupboardCandidates.Count; i++)
+            {
+                BuildingPrivlidge cupboard = _cupboardCandidates[i].Entity;
+                if (cupboard == null || cupboard.IsDestroyed || !cupboard.IsAuthed(target)) continue;
+                viewer.SendConsoleCommand("ddraw.arrow", lifetime, _cupboardDrawColor,
+                    target.transform.position + Vector3.up, cupboard.transform.position + Vector3.up,
+                    _config.Display.ArrowHeadRadius, _config.Display.DistanceFade, _config.Display.DepthTest);
+                return 1;
+            }
+            return 0;
+        }
+
+        private int DrawLoot(BasePlayer viewer, Vector3 origin, float radius, float lifetime, int budget)
+        {
+            _lootCandidates.Clear();
+            CollectStaticCandidates(_lootIndex, _lootCandidates, origin, radius);
+            _lootCandidates.Sort(CompareLootCandidates);
+            int maximum = Mathf.Min(_config.Limits.MaximumLoot, budget);
+            int draws = 0;
+
+            for (int i = 0; i < _lootCandidates.Count && draws < maximum; i++)
+            {
+                StaticCandidate<BaseEntity> candidate = _lootCandidates[i];
+                BaseEntity entity = candidate.Entity;
+                if (entity == null || entity.IsDestroyed) continue;
+                string label = "<size=12><color=#F2C94C>" + GetLootLabel(entity) + "</color> | <color=#2F6FFF>" +
+                    Mathf.RoundToInt(Mathf.Sqrt(candidate.SqrDistance)) + "</color>M</size>";
+                viewer.SendConsoleCommand("ddraw.text", lifetime, _lootDrawColor,
+                    entity.transform.position + Vector3.up * _config.Display.StaticLabelHeight, label);
+                draws++;
+            }
+            return draws;
+        }
+
+        private static string GetLootLabel(BaseEntity entity)
+        {
+            DroppedItem dropped = entity as DroppedItem;
+            if (dropped != null && dropped.item != null && dropped.item.info != null)
+                return EscapeRichText(dropped.item.info.displayName == null ? dropped.item.info.shortname : dropped.item.info.displayName.english).ToUpperInvariant();
+            if (entity is PlayerCorpse) return "PLAYER CORPSE";
+            if (entity is DroppedItemContainer) return "DROPPED LOOT";
+            string name = entity.ShortPrefabName;
+            if (string.IsNullOrEmpty(name)) return "LOOT";
+            return EscapeRichText(name.Replace('_', ' ').Replace('.', ' ')).ToUpperInvariant();
         }
 
         private void CollectStaticCandidates<T>(Dictionary<long, List<T>> index, List<StaticCandidate<T>> results, Vector3 origin, float radius) where T : BaseEntity
@@ -1991,6 +2644,7 @@ namespace Oxide.Plugins
 
             if (_vanishedPlayers.Count == 1) SubscribeVanishHooks();
             bool radarStarted = StartInvestigationRadar(player);
+            Interface.CallHook("OnSmartInvestigationStarted", player, radarStarted);
 
             if (_config.Vanish.LogUsage)
                 Puts(player.displayName + " (" + player.UserIDString + ") entered SmartRadar vanish.");
@@ -2048,6 +2702,7 @@ namespace Oxide.Plugins
             if (_vanishedPlayers.Count == 0) UnsubscribeVanishHooks();
 
             if (_config.Investigation.StopRadarOnReappear) StopRadar(player, false);
+            Interface.CallHook("OnSmartInvestigationEnded", player);
             if (_config.Vanish.LogUsage)
                 Puts(player.displayName + " (" + player.UserIDString + ") left SmartRadar vanish.");
             if (notify && _config.Vanish.EnableNotifications) Reply(player, "VanishDisabled");
@@ -2165,14 +2820,20 @@ namespace Oxide.Plugins
                 ? GetPreferences(player.userID)
                 : CreateDefaultPreferences();
             if (!_config.Investigation.UseSavedRadarPreferences)
+            {
                 preferences.Mode = _config.Investigation.RadarMode;
+                ApplyModePreset(preferences, preferences.Mode);
+            }
 
             string deniedFeature;
-            if (!CanUseMode(player, preferences.Mode, out deniedFeature))
+            if (!CanUsePreferences(player, preferences, out deniedFeature))
             {
                 string fallbackMode = GetFirstPermittedMode(player);
                 if (fallbackMode == null) return false;
                 preferences.Mode = fallbackMode;
+                ApplyModePreset(preferences, fallbackMode);
+                preferences.NpcsLayer = false;
+                preferences.LootLayer = false;
             }
 
             bool forceArrows = _config.Investigation.ForceVisionArrows && HasPermission(player, PermArrows);
@@ -2182,6 +2843,7 @@ namespace Oxide.Plugins
             {
                 session.StartedByVanish = true;
                 session.ForcedArrows = forceArrows;
+                if (_config.UserInterface.ShowOnRadarStart) ShowRadarUi(player, session);
             }
             return session != null;
         }
@@ -2399,6 +3061,42 @@ namespace Oxide.Plugins
         public void _Reappear(BasePlayer player) { Reappear(player); }
         public bool _IsInvisible(BasePlayer player) { return IsInvisible(player); }
 
+        public bool IsRadarEnabled(BasePlayer player)
+        {
+            return player != null && _sessions.ContainsKey(player.userID);
+        }
+
+        public bool EnableRadar(BasePlayer player)
+        {
+            if (player == null || !player.IsConnected || !HasPermission(player, PermUse)) return false;
+            StartRadar(player, GetPreferences(player.userID), false);
+            return _sessions.ContainsKey(player.userID);
+        }
+
+        public bool DisableRadar(BasePlayer player)
+        {
+            if (player == null || !_sessions.ContainsKey(player.userID)) return false;
+            StopRadar(player, false);
+            return true;
+        }
+
+        public bool IsRadarLayerEnabled(BasePlayer player, string layer)
+        {
+            RadarSession session;
+            if (player == null || !_sessions.TryGetValue(player.userID, out session) || session == null) return false;
+            switch ((layer ?? string.Empty).ToLowerInvariant())
+            {
+                case "players": return LayerPlayers(session.Preferences);
+                case "npcs": return LayerNpcs(session.Preferences);
+                case "loot": return LayerLoot(session.Preferences);
+                case "stashes": return LayerStashes(session.Preferences);
+                case "tc":
+                case "tcs":
+                case "cupboards": return LayerCupboards(session.Preferences);
+                default: return false;
+            }
+        }
+
         #endregion
 
         #region Permissions, privacy, and filters
@@ -2421,6 +3119,12 @@ namespace Oxide.Plugins
             permission.RegisterPermission(PermVanishDamage, this);
             permission.RegisterPermission(PermVanishInventory, this);
             permission.RegisterPermission(PermVanishTeleport, this);
+            permission.RegisterPermission(PermNpcs, this);
+            permission.RegisterPermission(PermLoot, this);
+            permission.RegisterPermission(PermExtended, this);
+            permission.RegisterPermission(PermTcInfo, this);
+            permission.RegisterPermission(PermUi, this);
+            permission.RegisterPermission(PermForensics, this);
         }
 
         private bool HasExplicitPermission(BasePlayer player, string permissionName)
@@ -2444,6 +3148,17 @@ namespace Oxide.Plugins
             if ((mode == ModePlayers || mode == ModeAll) && !HasPermission(player, PermPlayers)) deniedFeature = ModePlayers;
             else if ((mode == ModeStashes || mode == ModeAll) && !HasPermission(player, PermStashes)) deniedFeature = ModeStashes;
             else if ((mode == ModeCupboards || mode == ModeAll) && !HasPermission(player, PermCupboards)) deniedFeature = ModeCupboards;
+            return deniedFeature == null;
+        }
+
+        private bool CanUsePreferences(BasePlayer player, RadarPreferences preferences, out string deniedFeature)
+        {
+            deniedFeature = null;
+            if (LayerPlayers(preferences) && !HasPermission(player, PermPlayers)) deniedFeature = ModePlayers;
+            else if (LayerStashes(preferences) && !HasPermission(player, PermStashes)) deniedFeature = ModeStashes;
+            else if (LayerCupboards(preferences) && !HasPermission(player, PermCupboards)) deniedFeature = ModeCupboards;
+            else if (LayerNpcs(preferences) && !HasPermission(player, PermNpcs)) deniedFeature = "npcs";
+            else if (LayerLoot(preferences) && !HasPermission(player, PermLoot)) deniedFeature = "loot";
             return deniedFeature == null;
         }
 
@@ -2536,8 +3251,52 @@ namespace Oxide.Plugins
                 case "cupboard":
                 case "cupboards": return ModeCupboards;
                 case "all": return ModeAll;
+                case "custom": return ModeCustom;
                 default: return null;
             }
+        }
+
+        private static void ApplyModePreset(RadarPreferences preferences, string mode)
+        {
+            if (preferences == null || mode == ModeCustom) return;
+            preferences.PlayersLayer = mode == ModePlayers || mode == ModeAll;
+            preferences.StashesLayer = mode == ModeStashes || mode == ModeAll;
+            preferences.CupboardsLayer = mode == ModeCupboards || mode == ModeAll;
+        }
+
+        private static bool LayerPlayers(RadarPreferences preferences)
+        {
+            return preferences != null && (preferences.PlayersLayer ?? (preferences.Mode == ModePlayers || preferences.Mode == ModeAll));
+        }
+
+        private static bool LayerStashes(RadarPreferences preferences)
+        {
+            return preferences != null && (preferences.StashesLayer ?? (preferences.Mode == ModeStashes || preferences.Mode == ModeAll));
+        }
+
+        private static bool LayerCupboards(RadarPreferences preferences)
+        {
+            return preferences != null && (preferences.CupboardsLayer ?? (preferences.Mode == ModeCupboards || preferences.Mode == ModeAll));
+        }
+
+        private static bool LayerNpcs(RadarPreferences preferences)
+        {
+            return preferences != null && preferences.NpcsLayer == true;
+        }
+
+        private static bool LayerLoot(RadarPreferences preferences)
+        {
+            return preferences != null && preferences.LootLayer == true;
+        }
+
+        private static bool HasPlayerLayers(RadarPreferences preferences)
+        {
+            return LayerPlayers(preferences) || LayerNpcs(preferences);
+        }
+
+        private static bool HasStaticLayers(RadarPreferences preferences)
+        {
+            return LayerStashes(preferences) || LayerCupboards(preferences) || LayerLoot(preferences);
         }
 
         private static string NormalizeTeamFilter(string filter)

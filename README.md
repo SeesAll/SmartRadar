@@ -2,14 +2,16 @@
 
 SmartRadar is a unified administrative vanish and high-performance radar plugin for Rust servers. It is designed for investigative work and runs as one self-contained plugin on Oxide or Carbon.
 
-Version: **1.1.1**
+Version: **1.2.0**
 
 ## Highlights
 
-- Tracks active players, sleeping players, hidden or exposed stashes, and tool cupboards.
+- Tracks active players, NPCs, sleeping players, dropped/world loot, hidden or exposed stashes, and tool cupboards.
+- Provides a compact modern investigation panel with live independent layer toggles.
 - Uses shared spatial indexes instead of scanning every tracked entity for every administrator.
 - Runs all radar sessions through one staggered scheduler with configurable workload limits.
 - Shows player names, health, distance, team color, voice activity, authorization level, and player state.
+- Optionally shows held weapons and attachments, TC authorization counts, and player-to-TC links.
 - Supports fixed-length vision arrows without infinite physics raycasts.
 - Uses entity-parented drawings for connected players so labels follow moving targets.
 - Supports player-name, team, authorization, and safe-zone filters.
@@ -19,6 +21,7 @@ Version: **1.1.1**
 - Automatically starts radar with vision arrows when an administrator vanishes and stops radar when they reappear.
 - Hides vanished players and server owners from unauthorized radar users by default.
 - Does not modify player authorization flags.
+- Includes bounded one-shot searches for Steam ID associations, twig/unprivileged building blocks, and nearby dropped loot.
 
 ## Why choose SmartRadar?
 
@@ -57,6 +60,7 @@ Rust moderators and owners bypass normal SmartRadar permissions by default. This
 /radar players 250 1
 /radar status
 /radar for 60
+/radar ui
 /radar help
 ```
 
@@ -69,8 +73,9 @@ With the default configuration:
 1. An authorized administrator runs `/vanish`.
 2. SmartRadar makes the administrator invisible, enables noclip and protections, and starts the administrator's saved radar profile.
 3. Player vision arrows are forced on for that temporary radar session without changing the saved arrows preference.
-4. The administrator investigates using radar filters and, when permitted, inventory or reload-key interaction.
-5. Running `/vanish` again makes the administrator visible and stops radar automatically.
+4. A compact right-side panel exposes Players, NPCs, Loot, Stashes, Tool Cupboards, Sleepers, Vision/Arrows, Extended Info, TC Links, and Voice toggles. Open the normal inventory screen to obtain a cursor and click it.
+5. The administrator investigates using radar filters and, when permitted, inventory or reload-key interaction.
+6. Running `/vanish` again makes the administrator visible, stops radar, and removes the panel automatically.
 
 Vanish and radar can still be controlled independently when needed. Automatic linking, the fallback radar mode, and forced vision arrows are configurable.
 
@@ -95,6 +100,7 @@ Vanish and radar can still be controlled independently when needed. Automatic li
 | `stashes` | Stashes, their distance, and hidden/exposed state |
 | `tcs` | Tool cupboards and their distance |
 | `all` | Players, stashes, and tool cupboards |
+| `custom` | Any independent combination selected through `/radar layer` or the investigation panel |
 
 ## Radar commands
 
@@ -107,6 +113,7 @@ All radar commands require `smartradar.use`. Commands that display or enable a p
 | `/radar off` | Stops the user's active radar session. | None |
 | `/radar status` | Reports whether radar is active and displays its mode, distance, refresh rate, toggles, filters, and remaining temporary duration. | None |
 | `/radar help` | Displays the built-in command summary. | None |
+| `/radar ui` | Shows or hides the investigation panel. The panel can be clicked while the normal inventory cursor is open. | `smartradar.ui` |
 | `/radar reset` | Restores the user's saved preferences to configured defaults. If the default mode is not permitted, the first permitted mode is selected instead. | At least one mode permission |
 | `/radar <players\|stashes\|tcs\|all> [distance] [rate]` | Selects a mode, optionally changes distance and refresh rate, and starts radar immediately. | Permission for every feature in the selected mode |
 | `/radar mode <players\|stashes\|tcs\|all>` | Changes the saved mode and the active session's mode, if running. It does not start radar by itself. | Permission for every feature in the selected mode |
@@ -117,10 +124,16 @@ All radar commands require `smartradar.use`. Commands that display or enable a p
 | `/radar voice [on\|off]` | Toggles indicators for players who spoke recently. Omitting the value toggles the current setting. | `smartradar.voice` |
 | `/radar sleepers [on\|off]` | Toggles sleeping-player targets in player radar. Omitting the value toggles the current setting. | `smartradar.sleepers` |
 | `/radar vanished [on\|off]` | Toggles targets that SmartRadar identifies as vanished. Vanished targets remain hidden unless this is enabled and the viewer is permitted to see them. | `smartradar.seevanished` |
+| `/radar layer <players\|npcs\|loot\|stashes\|tcs> [on\|off]` | Independently toggles a radar category and switches the saved profile to `custom`. Omitting the value toggles the category. | Matching category permission |
+| `/radar extended [on\|off]` | Toggles held-item and weapon-attachment details beneath player labels. | `smartradar.extended` |
+| `/radar tclinks [on\|off]` | Toggles player-to-nearest-authorized-TC arrows and TC authorization counts. | `smartradar.tcinfo` |
 | `/radar filter name <text\|off>` | Shows only players whose display name contains the supplied text; `off` clears the name filter. Multiple-word text is supported. | None |
 | `/radar filter team <all\|mine\|others\|solo>` | Shows all players, the viewer's teammates, non-teammates, or players with no team. | None |
 | `/radar filter auth <all\|players\|staff\|moderators\|owners>` | Filters targets by Rust authorization level: regular players, all staff, moderators, or owners. | None |
 | `/radar filter safezone <all\|inside\|outside>` | Shows all players or only targets inside or outside safe zones. | None |
+| `/radar findid <SteamID>` | Draws up to 250 owned, TC-authorized, bag-deployed, or code-lock-authorized entity matches for 30 seconds. The scan yields between bounded batches. | `smartradar.forensics` |
+| `/radar buildings <twig\|unprivileged>` | Draws up to 250 matching building blocks for 30 seconds using a time-sliced scan. | `smartradar.forensics` |
+| `/radar drops [distance]` | Performs a one-shot 30-second drawing of indexed nearby loot. | `smartradar.forensics` |
 
 The `players`, `stashes`, and `tcs` modes require `smartradar.players`, `smartradar.stashes`, and `smartradar.cupboards`, respectively. The `all` mode requires all three permissions. Accepted mode synonyms include `player`, `stash`, `tc`, `cupboard`, and their plural forms.
 
@@ -146,10 +159,16 @@ Radar feature permissions do not grant radar command access on their own; a user
 | `smartradar.players` | Permission to select player radar and include players in `all` mode. |
 | `smartradar.stashes` | Permission to select stash radar and include hidden or exposed stashes in `all` mode. |
 | `smartradar.cupboards` | Permission to select tool-cupboard radar and include cupboards in `all` mode. The command name for this mode is `tcs`. |
+| `smartradar.npcs` | Permission to enable the independent NPC radar layer. |
+| `smartradar.loot` | Permission to enable the bounded dropped/world-loot radar layer. |
 | `smartradar.arrows` | Permission to enable fixed-length viewing-direction arrows on player targets. |
 | `smartradar.voice` | Permission to enable recent voice-activity indicators on player targets. |
 | `smartradar.sleepers` | Permission to include sleeping players in player or `all` radar. |
 | `smartradar.extendedrange` | Permission to select distances above the configured standard maximum, up to the configured extended maximum. It does not grant a radar mode. |
+| `smartradar.extended` | Permission to display held-item and attachment details in player labels. |
+| `smartradar.tcinfo` | Permission to display TC authorization counts and player-to-authorized-TC links. |
+| `smartradar.ui` | Permission to display and operate the onscreen investigation panel. |
+| `smartradar.forensics` | Permission to run the bounded `findid`, `buildings`, and `drops` one-shot searches. |
 | `smartradar.seevanished` | Permission to enable and display vanished-player targets. This is a privacy-sensitive permission with stricter administrator-bypass rules. |
 | `smartradar.seeowners` | Permission for a moderator to display owner-level targets when owner hiding is enabled. This is a privacy-sensitive permission with stricter administrator-bypass rules. |
 | `smartradar.vanish` | Permission to use `/vanish` and become invisible. This does not grant radar or investigative interaction features by itself. |
@@ -166,7 +185,10 @@ oxide.grant user 76561198000000000 smartradar.use
 oxide.grant user 76561198000000000 smartradar.players
 oxide.grant user 76561198000000000 smartradar.stashes
 oxide.grant user 76561198000000000 smartradar.cupboards
+oxide.grant user 76561198000000000 smartradar.npcs
+oxide.grant user 76561198000000000 smartradar.loot
 oxide.grant user 76561198000000000 smartradar.arrows
+oxide.grant user 76561198000000000 smartradar.ui
 oxide.grant user 76561198000000000 smartradar.vanish
 oxide.grant user 76561198000000000 smartradar.vanish.inventory
 ```
@@ -188,21 +210,23 @@ SmartRadar's vanish is self-contained. It uses Rust's limited-networking state, 
 
 While vanished, pressing the reload key while looking at a permitted target can inspect a player or container, toggle a door, or mount a vehicle. Inventory inspection and lock bypass are independently permission-controlled. Reload plus map-marker teleport is available but disabled by default.
 
-Vanish state can persist across disconnects and plugin reloads. The `smartradar.vanish.permanent` permission forces vanish to be restored and prevents manual reappearance. SmartRadar also exposes `Disappear`, `Reappear`, `IsInvisible`, `_Disappear`, `_Reappear`, and `_IsInvisible` API methods, plus the familiar `OnVanishDisappear` and `OnVanishReappear` hooks for plugin compatibility.
+Vanish state can persist across disconnects and plugin reloads. The `smartradar.vanish.permanent` permission forces vanish to be restored and prevents manual reappearance. SmartRadar exposes `Disappear`, `Reappear`, `IsInvisible`, `_Disappear`, `_Reappear`, and `_IsInvisible` for vanish compatibility. Radar integrations can call `IsRadarEnabled`, `EnableRadar`, `DisableRadar`, and `IsRadarLayerEnabled`. Lifecycle hooks include `OnSmartRadarActivated`, `OnSmartRadarDeactivated`, `OnSmartInvestigationStarted`, and `OnSmartInvestigationEnded`, in addition to the familiar `OnVanishDisappear` and `OnVanishReappear` veto hooks.
 
 ## Performance design
 
 SmartRadar is designed to avoid the most expensive behavior found in simple ESP implementations:
 
-- Active players, sleepers, stashes, and cupboards are assigned to configurable map cells.
+- Active players, sleepers, stashes, cupboards, and tracked loot are assigned to configurable map cells.
 - A radar request searches only cells intersecting its radius.
 - Moving-player indexes are rebuilt once and shared by all radar users.
 - Player indexing sleeps completely when nobody is using player radar.
-- Stashes and cupboards are updated through entity spawn and kill hooks.
+- Stashes, cupboards, and loot are updated through entity spawn and kill hooks.
 - Static entities refresh less frequently than moving players by default.
 - Results are sorted by squared distance, and only the nearest configured number are drawn.
 - A per-session draw-command budget prevents a large result set from creating an unlimited burst.
 - Session deadlines are staggered, and only a configured number of sessions can update per scheduler tick.
+- The CUI panel is rebuilt only when its state changes; it does not refresh every scheduler cycle.
+- Forensic searches are permission-gated, limited to 250 drawings, protected by a cooldown, and yield every 200 inspected entities.
 - Voice hooks are subscribed only while at least one active session requests voice indicators.
 - Vanish damage, lock, anti-hack, collider, and marker hooks are subscribed only while someone is vanished and only when their feature is configured.
 - Harmony patches perform small constant-time exits when nobody is vanished and suppress investigator signals or effects only when needed.
@@ -221,6 +245,8 @@ Important defaults:
 - Static-entity minimum refresh: `2s`
 - Vision arrows: disabled
 - Vision arrows while vanish starts radar: forced on
+- Investigation panel: enabled and shown when radar starts
+- NPC, loot, extended-info, and TC-link layers: disabled until requested
 - Voice indicators: disabled
 - Sleeping players: disabled
 - Vanished players: hidden
@@ -241,7 +267,7 @@ When preference persistence is enabled, SmartRadar stores each administrator's l
 
 SmartRadar is implemented as an Oxide-compatible `RustPlugin` and does not depend on Carbon-only APIs. Its self-contained Harmony patches use the patching support supplied by the server framework to isolate vanished-player sounds and effects. The same source is intended for Oxide and Carbon.
 
-Version 1.1.1 was compile-checked against local Rust/Oxide assemblies. Its vanish movement updater supports both known Rust `UpdateGroups` signatures. Final runtime validation should be performed on a current test server before production deployment.
+Version 1.2.0 was compile-checked against local Rust/Oxide assemblies. Its vanish movement updater supports both known Rust `UpdateGroups` signatures. Final runtime validation should be performed on a current test server before production deployment.
 
 ## Changelog
 
