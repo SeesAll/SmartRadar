@@ -17,7 +17,7 @@ using UnityEngine;
 
 namespace Oxide.Plugins
 {
-    [Info("SmartRadar", "SeesAll", "1.1.0")]
+    [Info("SmartRadar", "SeesAll", "1.1.1")]
     [Description("Unified administrative vanish and high-performance radar for Rust")]
     public class SmartRadar : RustPlugin
     {
@@ -82,6 +82,10 @@ namespace Oxide.Plugins
         private int _staggerSequence;
         private int _voiceWatcherCount;
         private bool _vanishHooksSubscribed;
+        private bool _networkGroupCompatibilityResolved;
+        private bool _networkGroupCompatibilityWarningShown;
+        private MethodInfo _networkUpdateGroupsMethod;
+        private MemberInfo _playerNetworkRangeMember;
 
         private static SmartRadar Instance;
 
@@ -2093,6 +2097,66 @@ namespace Oxide.Plugins
             if (controller != null) UnityEngine.Object.Destroy(controller);
         }
 
+        private void UpdateVanishNetworkGroup(BasePlayer player)
+        {
+            if (player == null || player.net == null) return;
+            try
+            {
+                if (!_networkGroupCompatibilityResolved)
+                {
+                    MethodInfo oneArgument = null;
+                    MethodInfo twoArguments = null;
+                    MethodInfo[] methods = player.net.GetType().GetMethods(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+                    for (int i = 0; i < methods.Length; i++)
+                    {
+                        if (methods[i].Name != "UpdateGroups") continue;
+                        ParameterInfo[] parameters = methods[i].GetParameters();
+                        if (parameters.Length == 1 && parameters[0].ParameterType == typeof(Vector3)) oneArgument = methods[i];
+                        else if (parameters.Length == 2 && parameters[0].ParameterType == typeof(Vector3)) twoArguments = methods[i];
+                    }
+                    _networkUpdateGroupsMethod = twoArguments ?? oneArgument;
+
+                    for (Type type = player.GetType(); type != null && _playerNetworkRangeMember == null; type = type.BaseType)
+                    {
+                        FieldInfo field = type.GetField("networkRange", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+                        if (field != null) _playerNetworkRangeMember = field;
+                        else
+                        {
+                            PropertyInfo property = type.GetProperty("networkRange", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+                            if (property != null) _playerNetworkRangeMember = property;
+                        }
+                    }
+                    _networkGroupCompatibilityResolved = true;
+                }
+
+                if (_networkUpdateGroupsMethod == null) return;
+                ParameterInfo[] updateParameters = _networkUpdateGroupsMethod.GetParameters();
+                if (updateParameters.Length == 1)
+                {
+                    _networkUpdateGroupsMethod.Invoke(player.net, new object[] { player.transform.position });
+                    return;
+                }
+
+                object range = null;
+                FieldInfo rangeField = _playerNetworkRangeMember as FieldInfo;
+                if (rangeField != null) range = rangeField.GetValue(player);
+                else
+                {
+                    PropertyInfo rangeProperty = _playerNetworkRangeMember as PropertyInfo;
+                    if (rangeProperty != null) range = rangeProperty.GetValue(player, null);
+                }
+                if (range == null && updateParameters[1].ParameterType.IsValueType)
+                    range = Activator.CreateInstance(updateParameters[1].ParameterType);
+                _networkUpdateGroupsMethod.Invoke(player.net, new[] { (object)player.transform.position, range });
+            }
+            catch (Exception exception)
+            {
+                if (_networkGroupCompatibilityWarningShown) return;
+                _networkGroupCompatibilityWarningShown = true;
+                PrintWarning("Vanish network-group compatibility update failed; radar and vanish remain active. " + exception.Message);
+            }
+        }
+
         private bool StartInvestigationRadar(BasePlayer player)
         {
             if (!_config.Investigation.StartRadarOnVanish || !HasPermission(player, PermUse)) return false;
@@ -2314,7 +2378,7 @@ namespace Oxide.Plugins
                 Instance.MaintainVanishMetabolism(_player);
                 if (Time.realtimeSinceStartup >= _nextNetworkGroupUpdate)
                 {
-                    _player.net.UpdateGroups(_player.transform.position);
+                    Instance.UpdateVanishNetworkGroup(_player);
                     _nextNetworkGroupUpdate = Time.realtimeSinceStartup + 2f;
                 }
                 if (_player.serverInput != null && _player.serverInput.IsDown(BUTTON.RELOAD) &&

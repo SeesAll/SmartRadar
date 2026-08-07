@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [1.1.1] - 2026-08-06
+
+### Fixed
+
+- Added a cached compatibility wrapper for both known Rust `Networkable.UpdateGroups` signatures, fixing compilation on current servers that require an `EntityNetworkRange` argument while retaining compatibility with older assemblies.
+
 ## [1.1.0] - 2026-08-06
 
 ### Added
@@ -64,6 +70,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Dynamic voice-hook subscription and idle player-index suspension.
 - Configuration validation, localization, safe lifecycle cleanup, and corrupt-data recovery.
 
-[Unreleased]: https://github.com/SeesAll/SmartRadar/compare/1.1.0...HEAD
+[Unreleased]: https://github.com/SeesAll/SmartRadar/compare/1.1.1...HEAD
+[1.1.1]: https://github.com/SeesAll/SmartRadar/compare/1.1.0...1.1.1
 [1.1.0]: https://github.com/SeesAll/SmartRadar/compare/1.0.0...1.1.0
 [1.0.0]: https://github.com/SeesAll/SmartRadar/releases/tag/1.0.0
