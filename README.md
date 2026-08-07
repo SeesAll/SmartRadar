@@ -2,7 +2,7 @@
 
 SmartRecon is a unified Rust administration and investigation suite combining high-performance radar, secure vanish, player inspection, forensic tools, and vanish-only map teleportation. It runs as one self-contained plugin on Oxide or Carbon.
 
-Version: **2.3.1**
+Version: **2.3.2**
 
 ## Highlights
 
@@ -285,7 +285,7 @@ When preference persistence is enabled, SmartRecon stores each administrator's l
 
 SmartRecon is implemented as an Oxide-compatible `RustPlugin` and does not depend on Carbon-only APIs. Its self-contained Harmony patches use the patching support supplied by the server framework to isolate vanished-player sounds and effects. The same source is intended for Oxide and Carbon.
 
-Version 2.3.1 was compile-checked against the local Rust/Oxide assembly set available on this PC. Its vanish movement updater supports both known Rust `UpdateGroups` signatures, and its NPC tracking recognizes both older and newer Rust NPC base types without depending on the connected-player list. Final runtime validation should be performed on a current test server before production deployment.
+Version 2.3.2 was compile-checked against the local Rust/Oxide assembly set available on this PC. Its vanish movement updater supports both known Rust `UpdateGroups` signatures, and its NPC tracking recognizes both older and newer Rust NPC base types without depending on the connected-player list. Final runtime validation should be performed on a current test server before production deployment.
 
 ## Changelog
 

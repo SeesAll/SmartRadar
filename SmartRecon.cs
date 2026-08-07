@@ -19,7 +19,7 @@ using UnityEngine;
 
 namespace Oxide.Plugins
 {
-    [Info("SmartRecon", "SeesAll", "2.3.1")]
+    [Info("SmartRecon", "SeesAll", "2.3.2")]
     [Description("Unified administrative reconnaissance, vanish, radar, inspection, and rapid movement for Rust")]
     public class SmartRecon : RustPlugin
     {
@@ -54,6 +54,7 @@ namespace Oxide.Plugins
         private const string ModeCustom = "custom";
         private const string RadarUiName = "SmartRecon.InvestigationUI";
         private const string RadarUiMoveName = "SmartRecon.InvestigationUI.Move";
+        private const string RadarUiMoveStepName = "SmartRecon.InvestigationUI.Move.Step";
         private const string DefaultUiAnchorMin = "0.8525 0.3305";
         private const string DefaultUiAnchorMax = "0.9925 0.6695";
         private const string PreviousDefaultUiAnchorMin = "0.8525 0.3225";
@@ -1676,6 +1677,8 @@ namespace Oxide.Plugins
                 else if (step == "5") moveSession.Step = UiMoveMediumStep;
                 else if (step == "10") moveSession.Step = UiMoveCoarseStep;
                 else return;
+                RefreshRadarMoveStepControls(player, moveSession);
+                return;
             }
             else
             {
@@ -1698,7 +1701,7 @@ namespace Oxide.Plugins
                 moveSession.UseConfiguredDefault = false;
             }
 
-            ShowRadarUi(player, radarSession);
+            UpdateRadarUiPosition(player);
         }
 
         private void CancelRadarUiMove(BasePlayer player, bool refreshPanel)
@@ -1762,6 +1765,7 @@ namespace Oxide.Plugins
 
         private void ShowRadarUi(BasePlayer player, RadarSession session)
         {
+            bool moveControllerActive = player != null && _uiMoveSessions.ContainsKey(player.userID);
             DestroyRadarUi(player);
             if (session != null) session.UiVisible = false;
             if (player == null || session == null || !_config.UserInterface.Enabled || session.Preferences.ShowUi != true ||
@@ -1779,7 +1783,7 @@ namespace Oxide.Plugins
             {
                 Image = { Color = settings.PanelColor },
                 RectTransform = { AnchorMin = FormatAnchor(panelMin), AnchorMax = FormatAnchor(panelMax) },
-                CursorEnabled = spectating
+                CursorEnabled = spectating && !moveControllerActive
             }, parentLayer, RadarUiName);
 
             elements.Add(new CuiLabel
@@ -1817,7 +1821,32 @@ namespace Oxide.Plugins
             }, RadarUiName);
             CuiHelper.AddUi(player, elements);
             session.UiVisible = true;
-            if (_uiMoveSessions.ContainsKey(player.userID)) ShowRadarMoveUi(player);
+            if (moveControllerActive) ShowRadarMoveUi(player);
+        }
+
+        private void UpdateRadarUiPosition(BasePlayer player)
+        {
+            if (player == null) return;
+            Vector2 panelMin;
+            Vector2 panelMax;
+            GetUiBounds(player.userID, out panelMin, out panelMax);
+            CuiElementContainer elements = new CuiElementContainer
+            {
+                new CuiElement
+                {
+                    Name = RadarUiName,
+                    Update = true,
+                    Components =
+                    {
+                        new CuiRectTransformComponent
+                        {
+                            AnchorMin = FormatAnchor(panelMin),
+                            AnchorMax = FormatAnchor(panelMax)
+                        }
+                    }
+                }
+            };
+            CuiHelper.AddUi(player, elements);
         }
 
         private void ShowRadarMoveUi(BasePlayer player)
@@ -1856,21 +1885,7 @@ namespace Oxide.Plugins
             AddUiMoveButton(elements, "←", "left", "0.14 0.56", "0.36 0.70", settings.DisabledColor, settings.TextColor, 15);
             AddUiMoveButton(elements, "→", "right", "0.64 0.56", "0.86 0.70", settings.DisabledColor, settings.TextColor, 15);
             AddUiMoveButton(elements, "↓", "down", "0.39 0.40", "0.61 0.54", settings.DisabledColor, settings.TextColor, 15);
-            elements.Add(new CuiLabel
-            {
-                Text = { Text = (moveSession.Step * 100f).ToString("0", CultureInfo.InvariantCulture) + "%", FontSize = 10, Align = TextAnchor.MiddleCenter, Color = settings.AccentColor },
-                RectTransform = { AnchorMin = "0.39 0.56", AnchorMax = "0.61 0.70" }
-            }, RadarUiMoveName);
-
-            AddUiMoveButton(elements, "1%", "step 1", "0.05 0.20", "0.32 0.31",
-                Mathf.Approximately(moveSession.Step, UiMoveFineStep) ? settings.EnabledColor : settings.DisabledColor,
-                settings.TextColor, 9);
-            AddUiMoveButton(elements, "5%", "step 5", "0.365 0.20", "0.635 0.31",
-                Mathf.Approximately(moveSession.Step, UiMoveMediumStep) ? settings.EnabledColor : settings.DisabledColor,
-                settings.TextColor, 9);
-            AddUiMoveButton(elements, "10%", "step 10", "0.68 0.20", "0.95 0.31",
-                Mathf.Approximately(moveSession.Step, UiMoveCoarseStep) ? settings.EnabledColor : settings.DisabledColor,
-                settings.TextColor, 9);
+            AddRadarMoveStepControls(elements, moveSession, settings);
 
             AddUiMoveButton(elements, "RESET", "reset", "0.05 0.055", "0.32 0.16", settings.DisabledColor, settings.TextColor, 8);
             AddUiMoveButton(elements, "CANCEL", "cancel", "0.365 0.055", "0.635 0.16", "0.46 0.20 0.20 0.95", settings.TextColor, 8);
@@ -1878,15 +1893,54 @@ namespace Oxide.Plugins
             CuiHelper.AddUi(player, elements);
         }
 
+        private void RefreshRadarMoveStepControls(BasePlayer player, UserInterfaceMoveSession moveSession)
+        {
+            if (player == null || moveSession == null) return;
+            CuiHelper.DestroyUi(player, RadarUiMoveStepName);
+            CuiElementContainer elements = new CuiElementContainer();
+            AddRadarMoveStepControls(elements, moveSession, _config.UserInterface);
+            CuiHelper.AddUi(player, elements);
+        }
+
+        private static void AddRadarMoveStepControls(CuiElementContainer elements,
+            UserInterfaceMoveSession moveSession, UserInterfaceSettings settings)
+        {
+            elements.Add(new CuiElement
+            {
+                Name = RadarUiMoveStepName,
+                Parent = RadarUiMoveName,
+                Components =
+                {
+                    new CuiRectTransformComponent { AnchorMin = "0 0", AnchorMax = "1 1" }
+                }
+            });
+            elements.Add(new CuiLabel
+            {
+                Text = { Text = (moveSession.Step * 100f).ToString("0", CultureInfo.InvariantCulture) + "%", FontSize = 10, Align = TextAnchor.MiddleCenter, Color = settings.AccentColor },
+                RectTransform = { AnchorMin = "0.39 0.56", AnchorMax = "0.61 0.70" }
+            }, RadarUiMoveStepName);
+
+            AddUiMoveButton(elements, "1%", "step 1", "0.05 0.20", "0.32 0.31",
+                Mathf.Approximately(moveSession.Step, UiMoveFineStep) ? settings.EnabledColor : settings.DisabledColor,
+                settings.TextColor, 9, RadarUiMoveStepName);
+            AddUiMoveButton(elements, "5%", "step 5", "0.365 0.20", "0.635 0.31",
+                Mathf.Approximately(moveSession.Step, UiMoveMediumStep) ? settings.EnabledColor : settings.DisabledColor,
+                settings.TextColor, 9, RadarUiMoveStepName);
+            AddUiMoveButton(elements, "10%", "step 10", "0.68 0.20", "0.95 0.31",
+                Mathf.Approximately(moveSession.Step, UiMoveCoarseStep) ? settings.EnabledColor : settings.DisabledColor,
+                settings.TextColor, 9, RadarUiMoveStepName);
+        }
+
         private static void AddUiMoveButton(CuiElementContainer elements, string label, string action,
-            string anchorMin, string anchorMax, string color, string textColor, int fontSize)
+            string anchorMin, string anchorMax, string color, string textColor, int fontSize,
+            string parent = RadarUiMoveName)
         {
             elements.Add(new CuiButton
             {
                 Button = { Color = color, Command = "smartrecon.uimove " + action },
                 RectTransform = { AnchorMin = anchorMin, AnchorMax = anchorMax },
                 Text = { Text = label, FontSize = fontSize, Align = TextAnchor.MiddleCenter, Color = textColor }
-            }, RadarUiMoveName);
+            }, parent);
         }
 
         private static void AddUiToggle(CuiElementContainer elements, string label, string action, bool enabled, int row, int column, UserInterfaceSettings settings)
