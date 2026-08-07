@@ -21,7 +21,7 @@ using UnityEngine;
 
 namespace Oxide.Plugins
 {
-    [Info("SmartRecon", "SeesAll", "2.0.0")]
+    [Info("SmartRecon", "SeesAll", "2.0.1")]
     [Description("Unified administrative reconnaissance, vanish, radar, inspection, and rapid movement for Rust")]
     public class SmartRecon : RustPlugin
     {
@@ -456,7 +456,12 @@ namespace Oxide.Plugins
 
         protected override void LoadConfig()
         {
-            if (!File.Exists(Config.Filename) && TryLoadLegacyConfig())
+            string currentPath = Path.Combine(Interface.Oxide.ConfigDirectory, Name + ".json");
+            bool shouldImportLegacyConfig = !File.Exists(currentPath);
+
+            base.LoadConfig();
+
+            if (shouldImportLegacyConfig && TryLoadLegacyConfig())
             {
                 ValidateConfig();
                 SaveConfig();
@@ -464,7 +469,6 @@ namespace Oxide.Plugins
                 return;
             }
 
-            base.LoadConfig();
             try
             {
                 _config = Config.ReadObject<PluginConfig>();
