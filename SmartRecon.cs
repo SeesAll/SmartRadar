@@ -19,7 +19,7 @@ using UnityEngine;
 
 namespace Oxide.Plugins
 {
-    [Info("SmartRecon", "SeesAll", "2.1.0")]
+    [Info("SmartRecon", "SeesAll", "2.1.1")]
     [Description("Unified administrative reconnaissance, vanish, radar, inspection, and rapid movement for Rust")]
     public class SmartRecon : RustPlugin
     {
@@ -53,6 +53,10 @@ namespace Oxide.Plugins
         private const string ModeAll = "all";
         private const string ModeCustom = "custom";
         private const string RadarUiName = "SmartRecon.InvestigationUI";
+        private const string DefaultUiAnchorMin = "0.835 0.305";
+        private const string DefaultUiAnchorMax = "0.985 0.695";
+        private const string PreviousDefaultUiAnchorMin = "0.815 0.275";
+        private const string PreviousDefaultUiAnchorMax = "0.985 0.725";
 
         #endregion
 
@@ -434,10 +438,10 @@ namespace Oxide.Plugins
             public bool ShowOnRadarStart = true;
 
             [JsonProperty("Anchor minimum")]
-            public string AnchorMin = "0.815 0.275";
+            public string AnchorMin = DefaultUiAnchorMin;
 
             [JsonProperty("Anchor maximum")]
-            public string AnchorMax = "0.985 0.725";
+            public string AnchorMax = DefaultUiAnchorMax;
 
             [JsonProperty("Panel color")]
             public string PanelColor = "0.035 0.045 0.055 0.94";
@@ -498,6 +502,13 @@ namespace Oxide.Plugins
             if (_config.Vanish == null) _config.Vanish = new VanishSettings();
             if (_config.Investigation == null) _config.Investigation = new InvestigationSettings();
             if (_config.UserInterface == null) _config.UserInterface = new UserInterfaceSettings();
+
+            if (string.Equals(_config.UserInterface.AnchorMin, PreviousDefaultUiAnchorMin, StringComparison.Ordinal) &&
+                string.Equals(_config.UserInterface.AnchorMax, PreviousDefaultUiAnchorMax, StringComparison.Ordinal))
+            {
+                _config.UserInterface.AnchorMin = DefaultUiAnchorMin;
+                _config.UserInterface.AnchorMax = DefaultUiAnchorMax;
+            }
 
             if (_config.General.CommandAliases == null || _config.General.CommandAliases.Length == 0)
                 _config.General.CommandAliases = new[] { "radar", "recon", "smartrecon" };
@@ -1462,19 +1473,19 @@ namespace Oxide.Plugins
 
             elements.Add(new CuiLabel
             {
-                Text = { Text = "SMARTRECON", FontSize = 14, Align = TextAnchor.MiddleLeft, Color = settings.TextColor },
+                Text = { Text = "SMARTRECON", FontSize = 13, Align = TextAnchor.MiddleLeft, Color = settings.TextColor },
                 RectTransform = { AnchorMin = "0.06 0.895", AnchorMax = "0.84 0.985" }
             }, RadarUiName);
             elements.Add(new CuiLabel
             {
-                Text = { Text = workflowStatus + "  •  RADAR ON", FontSize = 10, Align = TextAnchor.MiddleLeft, Color = settings.AccentColor },
+                Text = { Text = workflowStatus + "  •  RADAR ON", FontSize = 9, Align = TextAnchor.MiddleLeft, Color = settings.AccentColor },
                 RectTransform = { AnchorMin = "0.06 0.83", AnchorMax = "0.92 0.90" }
             }, RadarUiName);
             elements.Add(new CuiButton
             {
                 Button = { Color = "0 0 0 0", Command = "smartrecon.ui close" },
                 RectTransform = { AnchorMin = "0.86 0.91", AnchorMax = "0.97 0.98" },
-                Text = { Text = "×", FontSize = 17, Align = TextAnchor.MiddleCenter, Color = settings.TextColor }
+                Text = { Text = "×", FontSize = 15, Align = TextAnchor.MiddleCenter, Color = settings.TextColor }
             }, RadarUiName);
 
             AddUiToggle(elements, "PLAYERS", "players", LayerPlayers(session.Preferences) || session.ForcedPlayersLayer, 0, 0, settings);
@@ -1490,7 +1501,7 @@ namespace Oxide.Plugins
 
             elements.Add(new CuiLabel
             {
-                Text = { Text = spectating ? "Click controls • × closes • /radar ui reopens" : "Open inventory to click • /radar ui hides panel", FontSize = 9, Align = TextAnchor.MiddleCenter, Color = "0.62 0.68 0.72 1" },
+                Text = { Text = spectating ? "Click controls • × closes • /radar ui reopens" : "Open inventory to click • /radar ui hides panel", FontSize = 8, Align = TextAnchor.MiddleCenter, Color = "0.62 0.68 0.72 1" },
                 RectTransform = { AnchorMin = "0.04 0.015", AnchorMax = "0.96 0.095" }
             }, RadarUiName);
             CuiHelper.AddUi(player, elements);
@@ -1509,7 +1520,7 @@ namespace Oxide.Plugins
             {
                 Button = { Color = enabled ? settings.EnabledColor : settings.DisabledColor, Command = "smartrecon.ui " + action },
                 RectTransform = { AnchorMin = xMin.ToString("0.###", CultureInfo.InvariantCulture) + " " + yMin.ToString("0.###", CultureInfo.InvariantCulture), AnchorMax = xMax.ToString("0.###", CultureInfo.InvariantCulture) + " " + yMax.ToString("0.###", CultureInfo.InvariantCulture) },
-                Text = { Text = (enabled ? "●  " : "○  ") + label, FontSize = 10, Align = TextAnchor.MiddleCenter, Color = settings.TextColor }
+                Text = { Text = (enabled ? "●  " : "○  ") + label, FontSize = 9, Align = TextAnchor.MiddleCenter, Color = settings.TextColor }
             }, RadarUiName);
         }
 

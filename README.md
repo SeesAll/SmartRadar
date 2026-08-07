@@ -2,12 +2,12 @@
 
 SmartRecon is a unified Rust administration and investigation suite combining high-performance radar, secure vanish, player inspection, forensic tools, and vanish-only map teleportation. It runs as one self-contained plugin on Oxide or Carbon.
 
-Version: **2.1.0**
+Version: **2.1.1**
 
 ## Highlights
 
 - Tracks active players, humanoid NPCs, animals, sleeping players, dropped/world loot, hidden or exposed stashes, and tool cupboards.
-- Provides a compact modern investigation panel with live independent layer toggles.
+- Provides a compact, low-profile investigation panel with live independent layer toggles.
 - Uses shared spatial indexes instead of scanning every tracked entity for every administrator.
 - Runs all radar sessions through one staggered scheduler with configurable workload limits.
 - Shows player names, health, distance, team color, voice activity, authorization level, and player state.

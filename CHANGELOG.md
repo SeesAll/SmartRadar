@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [2.1.1] - 2026-08-07
+
+### Changed
+
+- Reduced the investigation panel from roughly 17% × 45% of the screen to 15% × 39%, preserving the same two-column controls with a smaller footprint.
+- Reduced title, status, button, close-control, and instruction text proportionally for the compact layout.
+- Existing installations still using the previous default anchors are upgraded automatically; customized UI positions and sizes remain untouched.
+
 ## [2.1.0] - 2026-08-07
 
 ### Added
@@ -265,7 +273,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Dynamic voice-hook subscription and idle player-index suspension.
 - Configuration validation, localization, safe lifecycle cleanup, and corrupt-data recovery.
 
-[Unreleased]: https://github.com/SeesAll/SmartRecon/compare/2.1.0...HEAD
+[Unreleased]: https://github.com/SeesAll/SmartRecon/compare/2.1.1...HEAD
+[2.1.1]: https://github.com/SeesAll/SmartRecon/compare/2.1.0...2.1.1
 [2.1.0]: https://github.com/SeesAll/SmartRecon/compare/2.0.6...2.1.0
 [2.0.6]: https://github.com/SeesAll/SmartRecon/compare/2.0.5...2.0.6
 [2.0.5]: https://github.com/SeesAll/SmartRecon/compare/2.0.4...2.0.5
