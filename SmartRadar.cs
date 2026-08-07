@@ -19,7 +19,7 @@ using UnityEngine;
 
 namespace Oxide.Plugins
 {
-    [Info("SmartRadar", "SeesAll", "1.3.0")]
+    [Info("SmartRadar", "SeesAll", "1.3.1")]
     [Description("Unified administrative vanish and high-performance radar for Rust")]
     public class SmartRadar : RustPlugin
     {
@@ -370,6 +370,9 @@ namespace Oxide.Plugins
 
             [JsonProperty("Minimum seconds between map-marker teleports")]
             public float MapTeleportCooldown = 0.5f;
+
+            [JsonProperty("Log successful map-marker teleports to a separate audit file")]
+            public bool LogMapMarkerTeleports = true;
 
             [JsonProperty("Show Rust's native invisibility indicator")]
             public bool ShowNativeIndicator = true;
@@ -3127,7 +3130,7 @@ namespace Oxide.Plugins
         private object OnMapMarkerAdd(BasePlayer player, ProtoBuf.MapNote note)
         {
             if (!IsBuiltInVanished(player) || note == null || player == null || !player.IsConnected ||
-                player.isMounted || !player.IsAlive() || !HasPermission(player, PermVanishTeleport))
+                player.IsSpectating() || player.isMounted || !player.IsAlive() || !HasPermission(player, PermVanishTeleport))
                 return null;
 
             float now = Time.realtimeSinceStartup;
@@ -3149,16 +3152,28 @@ namespace Oxide.Plugins
                 destination.y = Mathf.Max(destination.y, player.transform.position.y);
             destination.y += _config.Vanish.MapTeleportHeightOffset;
 
+            Vector3 origin = player.transform.position;
             player.Teleport(destination);
             player.RemoveFromTriggers();
             player.ForceUpdateTriggers();
             UpdateVanishNetworkGroup(player);
+            if (_config.Vanish.LogMapMarkerTeleports)
+                LogMapMarkerTeleport(player, origin, destination);
             if (_config.Vanish.RemoveTeleportMarker)
             {
                 RemoveTeleportMapNote(player, note);
                 return true;
             }
             return null;
+        }
+
+        private void LogMapMarkerTeleport(BasePlayer player, Vector3 origin, Vector3 destination)
+        {
+            string entry = string.Format(CultureInfo.InvariantCulture,
+                "[{0:O}] {1} ({2}) teleported while vanished from ({3:0.0}, {4:0.0}, {5:0.0}) to ({6:0.0}, {7:0.0}, {8:0.0}).",
+                DateTime.UtcNow, player.displayName, player.UserIDString,
+                origin.x, origin.y, origin.z, destination.x, destination.y, destination.z);
+            LogToFile("teleports", entry, this, false);
         }
 
         private static float GetMapTeleportHeight(Vector3 position)

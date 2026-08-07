@@ -6,6 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [1.3.1] - 2026-08-07
+
+### Added
+
+- Optional separate-file audit logging for successful vanished map-marker teleports, enabled by default.
+- Audit entries include UTC timestamp, administrator name, Steam ID, origin, and destination coordinates.
+
+### Changed
+
+- Native Rust admin spectating now explicitly disables map-marker teleport processing. SmartRadar leaves the note and spectating session untouched.
+
 ## [1.3.0] - 2026-08-07
 
 ### Added
@@ -161,7 +172,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Dynamic voice-hook subscription and idle player-index suspension.
 - Configuration validation, localization, safe lifecycle cleanup, and corrupt-data recovery.
 
-[Unreleased]: https://github.com/SeesAll/SmartRadar/compare/1.3.0...HEAD
+[Unreleased]: https://github.com/SeesAll/SmartRadar/compare/1.3.1...HEAD
+[1.3.1]: https://github.com/SeesAll/SmartRadar/compare/1.3.0...1.3.1
 [1.3.0]: https://github.com/SeesAll/SmartRadar/compare/1.2.3...1.3.0
 [1.2.3]: https://github.com/SeesAll/SmartRadar/compare/1.2.2...1.2.3
 [1.2.2]: https://github.com/SeesAll/SmartRadar/compare/1.2.1...1.2.2

@@ -2,7 +2,7 @@
 
 SmartRadar is a unified administrative vanish and high-performance radar plugin for Rust servers. It is designed for investigative work and runs as one self-contained plugin on Oxide or Carbon.
 
-Version: **1.3.0**
+Version: **1.3.1**
 
 ## Highlights
 
@@ -209,7 +209,9 @@ For Carbon, use the equivalent Carbon permission commands or permission interfac
 
 SmartRadar's vanish is self-contained. It uses Rust's limited-networking state, removes the administrator from ordinary network subscribers and server entity queries, tells AI memory to ignore the administrator, disables the collider, and keeps network groups updated while the administrator moves. It can enable noclip, pause metabolism, bypass anti-hack violations, block incoming and outgoing damage, and suppress entity signals and effects that could reveal the investigator.
 
-While vanished, pressing the reload key while looking at a permitted target can inspect a player or container, toggle a door, or mount a vehicle. Inventory inspection and lock bypass are independently permission-controlled. With `smartradar.vanish.teleport`, placing a map marker teleports the vanished administrator immediately; no reload-key modifier is required. Visible-player markers retain normal Rust behavior.
+While vanished, pressing the reload key while looking at a permitted target can inspect a player or container, toggle a door, or mount a vehicle. Inventory inspection and lock bypass are independently permission-controlled. With `smartradar.vanish.teleport`, placing a map marker teleports the vanished administrator immediately; no reload-key modifier is required. Visible-player markers retain normal Rust behavior. Native Rust spectating explicitly disables marker teleporting even if another state flag remains set.
+
+Successful marker teleports are written to SmartRadar's separate `teleports` audit log by default. Each entry records UTC time, administrator name and Steam ID, starting coordinates, and destination coordinates. This can be disabled in configuration without affecting teleport behavior.
 
 Vanish state can persist across disconnects and plugin reloads. The `smartradar.vanish.permanent` permission forces vanish to be restored and prevents manual reappearance. SmartRadar exposes `Disappear`, `Reappear`, `IsInvisible`, `_Disappear`, `_Reappear`, and `_IsInvisible` for vanish compatibility. Radar integrations can call `IsRadarEnabled`, `EnableRadar`, `DisableRadar`, and `IsRadarLayerEnabled`. Lifecycle hooks include `OnSmartRadarActivated`, `OnSmartRadarDeactivated`, `OnSmartInvestigationStarted`, and `OnSmartInvestigationEnded`, in addition to the familiar `OnVanishDisappear` and `OnVanishReappear` veto hooks.
 
@@ -249,6 +251,7 @@ Important defaults:
 - Private vanish and reappear feedback sounds: enabled
 - Vanish-only map-marker teleport: enabled for users with `smartradar.vanish.teleport`
 - Used teleport markers: removed automatically
+- Successful marker teleports: written to a separate audit log
 - Investigation panel: enabled and shown when radar starts
 - NPC, loot, extended-info, and TC-link layers: disabled until requested
 - Voice indicators: disabled
@@ -271,7 +274,7 @@ When preference persistence is enabled, SmartRadar stores each administrator's l
 
 SmartRadar is implemented as an Oxide-compatible `RustPlugin` and does not depend on Carbon-only APIs. Its self-contained Harmony patches use the patching support supplied by the server framework to isolate vanished-player sounds and effects. The same source is intended for Oxide and Carbon.
 
-Version 1.3.0 was compile-checked against local Rust/Oxide assemblies. Its vanish movement updater supports both known Rust `UpdateGroups` signatures, and its NPC tracking recognizes both older and newer Rust NPC base types without depending on the connected-player list. Final runtime validation should be performed on a current test server before production deployment.
+Version 1.3.1 was compile-checked against local Rust/Oxide assemblies. Its vanish movement updater supports both known Rust `UpdateGroups` signatures, and its NPC tracking recognizes both older and newer Rust NPC base types without depending on the connected-player list. Final runtime validation should be performed on a current test server before production deployment.
 
 ## Changelog
 

@@ -89,6 +89,7 @@
     "Preserve current noclip altitude when above the destination": true,
     "Map-marker teleport height offset": 2.0,
     "Minimum seconds between map-marker teleports": 0.5,
+    "Log successful map-marker teleports to a separate audit file": true,
     "Show Rust's native invisibility indicator": true,
     "Show vanish chat notifications": true,
     "Enable private vanish and reappear sounds": true,
