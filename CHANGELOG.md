@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [2.0.2] - 2026-08-07
+
+### Fixed
+
+- Player vision arrows now draw directly from the authoritative world-space eye ray instead of converting it through the player-root transform.
+- Corrected vision arrows that could appear behind a player and indicate the opposite of their actual viewing direction.
+
 ## [2.0.1] - 2026-08-07
 
 ### Fixed
@@ -201,7 +208,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Dynamic voice-hook subscription and idle player-index suspension.
 - Configuration validation, localization, safe lifecycle cleanup, and corrupt-data recovery.
 
-[Unreleased]: https://github.com/SeesAll/SmartRecon/compare/2.0.1...HEAD
+[Unreleased]: https://github.com/SeesAll/SmartRecon/compare/2.0.2...HEAD
+[2.0.2]: https://github.com/SeesAll/SmartRecon/compare/2.0.1...2.0.2
 [2.0.1]: https://github.com/SeesAll/SmartRecon/compare/2.0.0...2.0.1
 [2.0.0]: https://github.com/SeesAll/SmartRecon/compare/1.3.1...2.0.0
 [1.3.1]: https://github.com/SeesAll/SmartRecon/compare/1.3.0...1.3.1

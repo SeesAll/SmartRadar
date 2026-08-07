@@ -21,7 +21,7 @@ using UnityEngine;
 
 namespace Oxide.Plugins
 {
-    [Info("SmartRecon", "SeesAll", "2.0.1")]
+    [Info("SmartRecon", "SeesAll", "2.0.2")]
     [Description("Unified administrative reconnaissance, vanish, radar, inspection, and rapid movement for Rust")]
     public class SmartRecon : RustPlugin
     {
@@ -2451,12 +2451,14 @@ namespace Oxide.Plugins
 
                 if ((preferences.ShowArrows || session.ForcedArrows) && HasPermission(viewer, PermArrows) && draws < budget)
                 {
-                    Vector3 startWorld = target.eyes.position;
-                    Vector3 endWorld = startWorld + target.eyes.HeadRay().direction * _config.Display.ArrowLength;
-                    Vector3 localStart = target.transform.InverseTransformPoint(startWorld);
-                    Vector3 localEnd = target.transform.InverseTransformPoint(endWorld);
-                    viewer.SendConsoleCommand("ddraw.arrow", lifetime, _arrowDrawColor, localStart, localEnd,
-                        _config.Display.ArrowHeadRadius, _config.Display.DistanceFade, _config.Display.DepthTest, target.net.ID);
+                    Ray headRay = target.eyes.HeadRay();
+                    Vector3 startWorld = headRay.origin + Vector3.up * 0.115f;
+                    Vector3 endWorld = startWorld + headRay.direction * _config.Display.ArrowLength;
+
+                    // Player-root rotation can differ between server and client, so parenting a locally
+                    // transformed eye ray can reverse it. Keep authoritative eye-ray coordinates in world space.
+                    viewer.SendConsoleCommand("ddraw.arrow", lifetime, _arrowDrawColor, startWorld, endWorld,
+                        _config.Display.ArrowHeadRadius, _config.Display.DistanceFade, _config.Display.DepthTest);
                     draws++;
                 }
 
