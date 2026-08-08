@@ -2,7 +2,9 @@
 
 SmartRecon is a unified Rust administration and investigation suite combining high-performance radar, secure vanish, player and entity inspection, forensic tools, and vanish-only map teleportation. It runs as one self-contained plugin on Oxide or Carbon.
 
-Version: **2.5.0**
+Version: **2.5.1**
+
+License: **[SmartRecon Source-Available License 1.0](LICENSE)** — unmodified server use is permitted; modification and redistribution require written permission.
 
 ## Highlights
 
@@ -32,15 +34,17 @@ Version: **2.5.0**
 
 ## Why choose SmartRecon?
 
-SmartRecon is intended for server owners who want capable administrative visibility without giving every staff member unrestricted access or letting each radar session repeatedly scan the entire server. Its shared spatial indexes, staggered scheduler, result limits, and drawing budget are designed to keep workload predictable as player and entity counts grow.
+SmartRecon is not simply another ESP overlay. It is a coordinated administrative workflow built for the way Rust staff actually investigate reports: become invisible, enable radar and vision arrows, move quickly to the relevant location, observe without revealing the investigation, inspect ownership and authorization, and then leave vanish cleanly. One plugin owns that lifecycle instead of several unrelated plugins competing over commands, networking state, UI, and staff preferences.
 
-Compared with using separate radar and vanish plugins, SmartRecon provides one coordinated investigative lifecycle. Entering vanish can immediately enable the administrator's saved radar profile with viewing-direction arrows forced on; leaving vanish shuts that radar session down. Player, sleeper, stash, and tool-cupboard tracking, temporary sessions, filters, granular permissions, extended-range control, and vanished-staff privacy are managed by the same plugin.
+Performance is designed into the architecture rather than added as an afterthought. Active sessions share spatial indexes and one staggered scheduler; static layers respect a minimum refresh interval; drawings have per-cycle budgets and result limits; expensive protection hooks exist only while somebody is vanished; voice hooks exist only while requested; and forensic scans are bounded, cooled down, and time-sliced. Hammer reports and team relationships are resolved only after a deliberate strike—never through continuous building or player scans.
 
-That same workflow extends to rapid movement across the map. A vanished administrator with `smartrecon.vanish.teleport` can right-click a destination on the Rust map and teleport there immediately; SmartRecon removes the temporary marker after arrival so investigative notes do not accumulate. Ordinary markers remain untouched while the administrator is visible, and marker teleporting is disabled during native Rust spectating. Configurable landing behavior, a short anti-double-fire interval, and optional audit logging make the feature fast for staff without turning normal map-marker use into a teleport command.
+The investigative tools provide context rather than raw clutter. Viewing-direction arrows help reveal what a suspected player is tracking. Filters isolate names, teams, staff levels, safe zones, sleepers, NPCs, loot, stashes, and cupboards. The hammer workflow keeps short ownership results private in chat while substantial TC, turret, and code-lock authorization opens a readable modal grouped by current Rust team, with leaders, owners, outsiders, and unusual shared access highlighted as clues rather than automatic accusations.
 
-Entity investigation is integrated into that same vanished workflow. With `smartrecon.inspect`, an administrator can equip a normal hammer and strike a tool cupboard, turret, sleeping bag, bed, storage container, door, building block, trap, lock, or other player-owned entity. SmartRecon consumes the hammer action, privately reports relevant ownership or authorization information to that administrator, and prevents the strike from becoming a normal repair or upgrade. Short reports remain in private chat. Shared authorization reports open in a centered, closable panel that groups authorized players by their current Rust teams and identifies relationship clues without declaring an automatic rules violation. No command or UI toggle is required.
+SmartRecon also removes friction from routine administration. Vanish can automatically start the saved radar profile with vision arrows; native spectating can run the full radar and clickable panel; each administrator can position the compact panel independently; vanished map markers provide immediate teleportation and clean themselves up; reload-key interaction and inventory inspection reduce command typing; and state restoration handles disconnects or plugin reloads safely.
 
-SmartRecon replaces the need to run separate radar and vanish plugins for this workflow. Its vanish system removes administrators from normal networking and AI awareness, disables their collider, suppresses their signals and effects, protects them from damage, and can provide safe inventory or locked-entity interaction for authorized investigators. Expensive protection hooks are enabled only while at least one administrator is vanished.
+Access remains granular. Radar categories, arrows, voice, sleepers, extended range, owner visibility, vanished-player visibility, forensics, UI access, hammer inspection, inventory access, lock bypass, damage, map teleportation, and permanent vanish are independently permission-controlled. Privacy-sensitive permissions use stricter administrator-bypass rules, while ordinary players receive no automatic access.
+
+The result is a self-contained reconnaissance suite for Oxide or Carbon that combines radar, secure vanish, spectating support, rapid movement, entity inspection, authorization analysis, forensic searches, privacy protections, personal UI preferences, and optional auditing without requiring a stack of overlapping administration plugins.
 
 ## Requirements
 
@@ -78,6 +82,8 @@ Rust moderators and owners bypass normal SmartRecon permissions by default throu
 ```
 
 The default radar aliases are `/radar`, `/recon`, and `/smartrecon`. The default vanish aliases are `/vanish` and `/v`; inventory inspection uses `/inv` and `/invspy`. Aliases can be changed in the configuration.
+
+See [`COMMANDS.md`](COMMANDS.md) for the complete command and action reference, including accepted aliases and the internal UI endpoints.
 
 ## Investigative workflow
 
@@ -132,8 +138,8 @@ All radar commands require `smartrecon.use`. Commands that display or enable a p
 | `/radar ui move` | Opens a temporary centered positioning controller with directional arrows, selectable 1%, 5%, and 10% steps, live preview, Reset, Cancel, and Save. | `smartrecon.ui` |
 | `/radar ui reset` | Removes the caller's personal panel position and restores the anchors configured by the server owner. | `smartrecon.ui` |
 | `/radar reset` | Restores the user's saved preferences to configured defaults. If the default mode is not permitted, the first permitted mode is selected instead. | At least one mode permission |
-| `/radar <players\|stashes\|tcs\|all> [distance] [rate]` | Selects a mode, optionally changes distance and refresh rate, and starts radar immediately. | Permission for every feature in the selected mode |
-| `/radar mode <players\|stashes\|tcs\|all>` | Changes the saved mode and the active session's mode, if running. It does not start radar by itself. | Permission for every feature in the selected mode |
+| `/radar <players\|stashes\|tcs\|all\|custom> [distance] [rate]` | Selects a mode, optionally changes distance and refresh rate, and starts radar immediately. `custom` uses the caller's independently selected layers. | Permission for every enabled feature in the selected mode |
+| `/radar mode <players\|stashes\|tcs\|all\|custom>` | Changes the saved mode and the active session's mode, if running. It does not start radar by itself. | Permission for every enabled feature in the selected mode |
 | `/radar distance <meters>` | Changes the saved search radius and the active session's radius, subject to the permitted maximum. | `smartrecon.extendedrange` only when exceeding the standard maximum |
 | `/radar rate <seconds>` | Changes the saved refresh interval and the active session's interval, within configured limits. Static radar updates still respect the configured static minimum. | None |
 | `/radar for <seconds>` | Starts radar if necessary and sets it to stop automatically after the specified duration. | Permission for the saved mode |
@@ -149,7 +155,7 @@ All radar commands require `smartrecon.use`. Commands that display or enable a p
 | `/radar filter auth <all\|players\|staff\|moderators\|owners>` | Filters targets by Rust authorization level: regular players, all staff, moderators, or owners. | None |
 | `/radar filter safezone <all\|inside\|outside>` | Shows all players or only targets inside or outside safe zones. | None |
 | `/radar findid <SteamID>` | Draws up to 250 owned, TC-authorized, bag-deployed, or code-lock-authorized entity matches for 30 seconds. The scan yields between bounded batches. | `smartrecon.forensics` |
-| `/radar buildings <twig\|unprivileged>` | Draws up to 250 matching building blocks for 30 seconds using a time-sliced scan. | `smartrecon.forensics` |
+| `/radar buildings [twig\|unprivileged]` | Draws up to 250 matching building blocks for 30 seconds using a time-sliced scan. Omitting the filter defaults to `twig`. | `smartrecon.forensics` |
 | `/radar drops [distance]` | Performs a one-shot 30-second drawing of indexed nearby loot. | `smartrecon.forensics` |
 
 The `players`, `stashes`, and `tcs` modes require `smartrecon.players`, `smartrecon.stashes`, and `smartrecon.cupboards`, respectively. The `all` mode requires all three permissions. Accepted mode synonyms include `player`, `stash`, `tc`, `cupboard`, and their plural forms.
@@ -318,12 +324,18 @@ When preference persistence is enabled, SmartRecon stores each administrator's l
 
 SmartRecon is implemented as an Oxide-compatible `RustPlugin` and does not depend on Carbon-only APIs. Its self-contained Harmony patches use the patching support supplied by the server framework to isolate vanished-player sounds and effects. The same source is intended for Oxide and Carbon.
 
-Version 2.5.0 was compile-checked against the local Rust/Oxide assembly set available on this PC. Its vanish movement updater supports both known Rust `UpdateGroups` signatures, and its NPC tracking recognizes both older and newer Rust NPC base types without depending on the connected-player list. Final runtime validation should be performed on a current test server before production deployment.
+Version 2.5.1 was compile-checked against the local Rust/Oxide assembly set available on this PC. Its vanish movement updater supports both known Rust `UpdateGroups` signatures, and its NPC tracking recognizes both older and newer Rust NPC base types without depending on the connected-player list. Final runtime validation should be performed on a current test server before production deployment.
 
 ## Changelog
 
 See [`CHANGELOG.md`](CHANGELOG.md).
 
+## Command reference
+
+See [`COMMANDS.md`](COMMANDS.md) for every player-facing command, alias, action-driven feature, and internal CUI endpoint.
+
 ## License
 
-SmartRecon is available under the [MIT License](LICENSE).
+SmartRecon 2.5.1 and later is distributed under the proprietary [SmartRecon Source-Available License 1.0](LICENSE). You may download and run an unmodified copy on Rust servers you own, operate, or administer, including monetized servers. Modification, derivative works, redistribution, mirroring, resale, sublicensing, and reuse in other projects require prior written permission from SeesAll.
+
+This is source-available software, not open-source software. Earlier versions that were already released under the MIT License remain governed by the license distributed with those versions; the new license cannot revoke rights previously granted for those releases.

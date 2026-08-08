@@ -6,6 +6,31 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [2.5.1] - 2026-08-08
+
+### Added
+
+- Added `COMMANDS.md` as a complete reference for every player-facing command, alias, action-driven feature, accepted toggle/filter synonym, and internal CUI endpoint.
+- Added an explicit copyright and license notice to the plugin source.
+
+### Changed
+
+- Replaced the MIT License for SmartRecon 2.5.1 and later with the proprietary SmartRecon Source-Available License 1.0. It permits running unmodified copies on administered Rust servers, including monetized servers, while reserving modification, derivative-work, redistribution, mirroring, resale, sublicensing, and code-reuse rights.
+- Rewrote `Why choose SmartRecon?` to explain the unified investigation lifecycle, performance architecture, contextual authorization reporting, rapid administration workflow, privacy model, and granular permissions.
+- Expanded README cross-references and licensing guidance, including the distinction between source-available and open-source software.
+
+### Fixed
+
+- Replaced the final obsolete `SmartRadar.json` paths in `.gitignore` with `SmartRecon.json` paths.
+- Updated built-in and README radar help to include the already-supported `custom` mode consistently.
+- Documented the already-supported argument-free `/radar buildings` command, which defaults to the `twig` filter.
+- Corrected `/inv` and `/invspy` argument parsing so multi-word player names are searched as one name instead of only using the first word.
+
+### Documentation
+
+- Re-audited the README, changelog, permission table, default configuration, installation guidance, command syntax, aliases, repository description, and release links against the 2.5.1 source.
+- Clarified that versions already released under MIT remain under their original license; the new license applies beginning with 2.5.1 and does not retroactively revoke earlier grants.
+
 ## [2.5.0] - 2026-08-07
 
 ### Added
@@ -391,7 +416,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Dynamic voice-hook subscription and idle player-index suspension.
 - Configuration validation, localization, safe lifecycle cleanup, and corrupt-data recovery.
 
-[Unreleased]: https://github.com/SeesAll/SmartRecon/compare/2.5.0...HEAD
+[Unreleased]: https://github.com/SeesAll/SmartRecon/compare/2.5.1...HEAD
+[2.5.1]: https://github.com/SeesAll/SmartRecon/compare/2.5.0...2.5.1
 [2.5.0]: https://github.com/SeesAll/SmartRecon/compare/2.4.0...2.5.0
 [2.4.0]: https://github.com/SeesAll/SmartRecon/compare/2.3.2...2.4.0
 [2.3.2]: https://github.com/SeesAll/SmartRecon/compare/2.3.1...2.3.2

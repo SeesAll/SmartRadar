@@ -1,3 +1,6 @@
+// Copyright (c) 2026 SeesAll. All rights reserved.
+// Licensed under the SmartRecon Source-Available License 1.0. See LICENSE.
+
 using Facepunch;
 using HarmonyLib;
 using Network;
@@ -19,7 +22,7 @@ using UnityEngine;
 
 namespace Oxide.Plugins
 {
-    [Info("SmartRecon", "SeesAll", "2.5.0")]
+    [Info("SmartRecon", "SeesAll", "2.5.1")]
     [Description("Unified administrative reconnaissance, vanish, radar, inspection, and rapid movement for Rust")]
     public class SmartRecon : RustPlugin
     {
@@ -904,7 +907,7 @@ namespace Oxide.Plugins
                 ["UiPositionReset"] = "SmartRecon panel position reset to the configured default.",
                 ["UiMoveRequiresRadar"] = "Start SmartRecon radar before opening the panel movement controls.",
                 ["UiMoveDisabled"] = "Personal panel positioning is disabled in the SmartRecon configuration.",
-                ["Help"] = "SmartRecon commands:\n/radar - toggle\n/radar <players|stashes|tcs|all> [distance] [rate]\n/radar on|off|status|reset|ui\n/radar ui move - open panel positioning controls\n/radar ui reset - restore the configured panel position\n/radar mode <mode>\n/radar layer <players|npcs|loot|stashes|tcs> [on|off]\n/radar distance <meters>\n/radar rate <seconds>\n/radar for <seconds>\n/radar arrows|voice|sleepers|vanished|extended|tclinks [on|off]\n/radar filter name <text|off>\n/radar filter team <all|mine|others|solo>\n/radar filter auth <all|players|staff|moderators|owners>\n/radar filter safezone <all|inside|outside>\n/radar findid <steamid>\n/radar buildings <twig|unprivileged>\n/radar drops [distance]",
+                ["Help"] = "SmartRecon commands:\n/radar - toggle\n/radar <players|stashes|tcs|all|custom> [distance] [rate]\n/radar on|off|status|reset|ui\n/radar ui move - open panel positioning controls\n/radar ui reset - restore the configured panel position\n/radar mode <players|stashes|tcs|all|custom>\n/radar layer <players|npcs|loot|stashes|tcs> [on|off]\n/radar distance <meters>\n/radar rate <seconds>\n/radar for <seconds>\n/radar arrows|voice|sleepers|vanished|extended|tclinks [on|off]\n/radar filter name <text|off>\n/radar filter team <all|mine|others|solo>\n/radar filter auth <all|players|staff|moderators|owners>\n/radar filter safezone <all|inside|outside>\n/radar findid <steamid>\n/radar buildings [twig|unprivileged]\n/radar drops [distance]",
                 ["VanishedUnavailable"] = "Viewing vanished players is disabled or not permitted.",
                 ["ConsolePlayerOnly"] = "SmartRecon must be controlled by an in-game player.",
                 ["DurationSet"] = "SmartRecon will automatically disable in {0:0.#} seconds.",
@@ -922,7 +925,7 @@ namespace Oxide.Plugins
                 ["VanishRadarUnavailable"] = "Vanish enabled, but investigative radar could not start because its command or mode permissions are missing.",
                 ["ForensicCooldown"] = "Please wait {0:0.#} seconds before starting another forensic search.",
                 ["ForensicFindUsage"] = "Usage: /radar findid <Steam ID>",
-                ["ForensicBuildingUsage"] = "Usage: /radar buildings <twig|unprivileged>",
+                ["ForensicBuildingUsage"] = "Usage: /radar buildings [twig|unprivileged]",
                 ["ForensicComplete"] = "Forensic drawing complete: {0} results (maximum 250, visible for 30 seconds).",
                 ["InspectionHeader"] = "<color=#19C7B6><b>{0}</b></color>",
                 ["InspectionOwner"] = "Owner: {0}",
@@ -1303,15 +1306,19 @@ namespace Oxide.Plugins
             }
 
             BasePlayer target = null;
+            string query = null;
             if (args != null && args.Length > 0)
-                target = FindPlayer(args[0]);
+            {
+                query = string.Join(" ", args).Trim();
+                target = FindPlayer(query);
+            }
             else
                 target = RaycastPlayer(viewer, 5f);
 
             if (target == null)
             {
                 if (args == null || args.Length == 0) Reply(viewer, "InventoryUsage");
-                else Reply(viewer, "InventoryNoTarget", args[0]);
+                else Reply(viewer, "InventoryNoTarget", query);
                 return;
             }
             OpenPlayerInventory(viewer, target);

@@ -9,9 +9,9 @@ obj/
 *.user
 
 # Generated server files
-oxide/config/SmartRadar.json
-oxide/data/SmartRadar.json
+oxide/config/SmartRecon.json
+oxide/data/SmartRecon.json
 oxide/logs/
-carbon/configs/SmartRadar.json
-carbon/data/SmartRadar.json
+carbon/configs/SmartRecon.json
+carbon/data/SmartRecon.json
 carbon/logs/
