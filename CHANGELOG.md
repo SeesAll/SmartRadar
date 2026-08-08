@@ -6,6 +6,30 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [2.5.0] - 2026-08-07
+
+### Added
+
+- Added a centered, closable authorization-report popup for TC, auto-turret, and directly struck code-lock reports that meet the configured entry threshold.
+- Popup authorization is grouped by current Rust team and identifies team leaders, entity owners, multiple-team access, players outside the owner's current team, and players with no current team.
+- Added automatic pagination for unusually large reports and configurable popup threshold, page size, and team grouping.
+
+### Changed
+
+- Short, single-owner entity reports remain in private chat; substantial shared-authorization output no longer risks being lost in a fast-moving chat window.
+- Striking a container or door body reports its owner, while directly striking its attached code lock inspects the lock whitelist and guest authorization.
+- SAM sites remain ownership-only reports because they do not maintain their own per-player authorization list.
+
+### Security
+
+- The popup is private to the investigating administrator, owns its cursor only while open, and is destroyed when closed, replaced, leaving vanish, dying, disconnecting, or unloading the plugin.
+- Team-group findings are labelled as investigation clues rather than automatic rule violations. Lock codes and container contents remain excluded.
+- Player-supplied names have line breaks and rich-text delimiters sanitized before being inserted into radar labels, chat reports, or the popup.
+
+### Performance
+
+- Team relationships are resolved only for the struck entity's authorization entries. The feature adds no polling, building-wide entity scan, or global player scan.
+
 ## [2.4.0] - 2026-08-07
 
 ### Added
@@ -367,7 +391,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Dynamic voice-hook subscription and idle player-index suspension.
 - Configuration validation, localization, safe lifecycle cleanup, and corrupt-data recovery.
 
-[Unreleased]: https://github.com/SeesAll/SmartRecon/compare/2.4.0...HEAD
+[Unreleased]: https://github.com/SeesAll/SmartRecon/compare/2.5.0...HEAD
+[2.5.0]: https://github.com/SeesAll/SmartRecon/compare/2.4.0...2.5.0
 [2.4.0]: https://github.com/SeesAll/SmartRecon/compare/2.3.2...2.4.0
 [2.3.2]: https://github.com/SeesAll/SmartRecon/compare/2.3.1...2.3.2
 [2.3.1]: https://github.com/SeesAll/SmartRecon/compare/2.3.0...2.3.1

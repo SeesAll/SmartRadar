@@ -126,6 +126,10 @@
     "Minimum seconds between inspection reports": 0.25,
     "Include tool cupboard upkeep time": true,
     "Include code lock authorization lists": true,
+    "Use a centered popup for shared authorization reports": true,
+    "Minimum authorization entries required for a popup": 2,
+    "Group popup authorization by current Rust team": true,
+    "Maximum report rows per popup page": 16,
     "Log hammer inspections to the server console": false
   }
 }

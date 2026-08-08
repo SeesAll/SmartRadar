@@ -19,7 +19,7 @@ using UnityEngine;
 
 namespace Oxide.Plugins
 {
-    [Info("SmartRecon", "SeesAll", "2.4.0")]
+    [Info("SmartRecon", "SeesAll", "2.5.0")]
     [Description("Unified administrative reconnaissance, vanish, radar, inspection, and rapid movement for Rust")]
     public class SmartRecon : RustPlugin
     {
@@ -56,6 +56,8 @@ namespace Oxide.Plugins
         private const string RadarUiName = "SmartRecon.InvestigationUI";
         private const string RadarUiMoveName = "SmartRecon.InvestigationUI.Move";
         private const string RadarUiMoveStepName = "SmartRecon.InvestigationUI.Move.Step";
+        private const string InspectionUiName = "SmartRecon.InspectionUI";
+        private const string InspectionUiPanelName = "SmartRecon.InspectionUI.Panel";
         private const string DefaultUiAnchorMin = "0.8525 0.3305";
         private const string DefaultUiAnchorMax = "0.9925 0.6695";
         private const string PreviousDefaultUiAnchorMin = "0.8525 0.3225";
@@ -112,6 +114,7 @@ namespace Oxide.Plugins
         private readonly Dictionary<ulong, float> _mapTeleportCooldowns = new Dictionary<ulong, float>();
         private readonly Dictionary<ulong, float> _hammerInspectionCooldowns = new Dictionary<ulong, float>();
         private readonly Dictionary<ulong, UserInterfaceMoveSession> _uiMoveSessions = new Dictionary<ulong, UserInterfaceMoveSession>();
+        private readonly Dictionary<ulong, InspectionPopupReport> _inspectionPopupReports = new Dictionary<ulong, InspectionPopupReport>();
 
         private float _nextPlayerIndexRebuild;
         private float _nextSleeperIndexRebuild;
@@ -461,6 +464,18 @@ namespace Oxide.Plugins
             [JsonProperty("Include code lock authorization lists")]
             public bool IncludeLockAuthorization = true;
 
+            [JsonProperty("Use a centered popup for shared authorization reports")]
+            public bool UseAuthorizationPopup = true;
+
+            [JsonProperty("Minimum authorization entries required for a popup")]
+            public int PopupMinimumAuthorizationEntries = 2;
+
+            [JsonProperty("Group popup authorization by current Rust team")]
+            public bool GroupPopupAuthorizationByTeam = true;
+
+            [JsonProperty("Maximum report rows per popup page")]
+            public int PopupRowsPerPage = 16;
+
             [JsonProperty("Log hammer inspections to the server console")]
             public bool LogUsage = false;
         }
@@ -621,6 +636,10 @@ namespace Oxide.Plugins
             if (!IsFinitePositive(_config.HammerInspection.Cooldown))
                 _config.HammerInspection.Cooldown = 0.25f;
             _config.HammerInspection.Cooldown = Mathf.Clamp(_config.HammerInspection.Cooldown, 0.1f, 5f);
+            _config.HammerInspection.PopupMinimumAuthorizationEntries = Mathf.Clamp(
+                _config.HammerInspection.PopupMinimumAuthorizationEntries, 1, 100);
+            _config.HammerInspection.PopupRowsPerPage = Mathf.Clamp(
+                _config.HammerInspection.PopupRowsPerPage, 8, 24);
 
             _playerDrawColor = ParseColor(_config.Display.PlayerDrawingColor, Color.white);
             _stashDrawColor = ParseColor(_config.Display.StashDrawingColor, new Color(0.9f, 0.26f, 0.96f));
@@ -690,6 +709,40 @@ namespace Oxide.Plugins
             public Vector2 PreviewCenter;
             public float Step = UiMoveFineStep;
             public bool UseConfiguredDefault;
+        }
+
+        private sealed class InspectionPopupReport
+        {
+            public string Title;
+            public string Summary;
+            public string Footer;
+            public readonly List<string> Rows = new List<string>();
+            public int Page;
+        }
+
+        private sealed class InspectionAuthorizationMember
+        {
+            public ulong UserId;
+            public string Identity;
+            public ulong TeamId;
+            public ulong TeamLeaderId;
+            public bool IsOwner;
+        }
+
+        private sealed class InspectionTeamGroup
+        {
+            public ulong TeamId;
+            public ulong TeamLeaderId;
+            public readonly List<InspectionAuthorizationMember> Members = new List<InspectionAuthorizationMember>();
+        }
+
+        private sealed class InspectionAuthorizationStats
+        {
+            public int Count;
+            public int TeamCount;
+            public int NoTeamCount;
+            public int OutsideOwnerTeamCount;
+            public readonly HashSet<ulong> TeamIds = new HashSet<ulong>();
         }
 
         private sealed class RadarPreferences
@@ -882,6 +935,22 @@ namespace Oxide.Plugins
                 ["InspectionUpkeep"] = "Protected for: {0}",
                 ["InspectionServerOwned"] = "Server or unknown",
                 ["InspectionUnknownPlayer"] = "Unknown player",
+                ["InspectionUiAuthorizedLabel"] = "Authorized",
+                ["InspectionUiAuthorizedSummary"] = "{0}: {1}  •  Current Rust teams: {2}  •  No team: {3}",
+                ["InspectionUiTeamHeader"] = "{0}'S TEAM — {1} authorized",
+                ["InspectionUiTeamIdHeader"] = "RUST TEAM {0} — {1} authorized",
+                ["InspectionUiNoTeamHeader"] = "NO CURRENT RUST TEAM — {0} authorized",
+                ["InspectionUiOwnerSuffix"] = "Owner",
+                ["InspectionUiLeaderSuffix"] = "Leader",
+                ["InspectionUiCluesHeader"] = "INVESTIGATION CLUES",
+                ["InspectionUiMultipleTeamsClue"] = "• {0} different current Rust teams share this authorization",
+                ["InspectionUiOutsideOwnerTeamClue"] = "• {0} authorized player(s) are outside the owner's current team",
+                ["InspectionUiNoTeamClue"] = "• {0} authorized player(s) have no current Rust team",
+                ["InspectionUiPage"] = "PAGE {0} / {1}",
+                ["InspectionUiTcAuthorization"] = "TC AUTHORIZATION",
+                ["InspectionUiTurretAuthorization"] = "TURRET AUTHORIZATION",
+                ["InspectionUiLockAuthorization"] = "CODE LOCK WHITELIST",
+                ["InspectionUiGuestAuthorization"] = "CODE LOCK GUESTS",
                 ["InspectionAudit"] = "{0} ({1}) inspected {2} owned by {3} at {4}."
             }, this);
         }
@@ -943,7 +1012,10 @@ namespace Oxide.Plugins
             if (_dataDirty) SaveData();
 
             foreach (BasePlayer player in BasePlayer.activePlayerList)
+            {
                 DestroyRadarUi(player);
+                DestroyInspectionUi(player);
+            }
 
             List<BasePlayer> hidden = new List<BasePlayer>();
             foreach (ulong userId in _vanishedPlayers)
@@ -963,6 +1035,7 @@ namespace Oxide.Plugins
             _mapTeleportCooldowns.Clear();
             _hammerInspectionCooldowns.Clear();
             _uiMoveSessions.Clear();
+            _inspectionPopupReports.Clear();
             ClearIndexes();
             UnsubscribeVanishHooks();
             Instance = null;
@@ -1009,6 +1082,7 @@ namespace Oxide.Plugins
             _hammerInspectionCooldowns.Remove(player.userID);
             _forensicCooldowns.Remove(player.userID);
             _uiMoveSessions.Remove(player.userID);
+            CloseInspectionPopup(player);
             if (_dataDirty) SaveData();
         }
 
@@ -1022,6 +1096,12 @@ namespace Oxide.Plugins
                 else if (player._limitedNetworking && _storedData.VanishedUsers.Contains(player.userID))
                     ExitVanish(player, false, false, true);
             });
+        }
+
+        private void OnPlayerDeath(BasePlayer player, HitInfo info)
+        {
+            if (player != null && _inspectionPopupReports.ContainsKey(player.userID))
+                CloseInspectionPopup(player);
         }
 
         private void OnPlayerVoice(BasePlayer player, byte[] data)
@@ -1100,6 +1180,8 @@ namespace Oxide.Plugins
                 ExitVanish(player, true, false, false);
                 return;
             }
+            if (PermissionMatches(permissionName, PermInspect) && !HasPermission(player, PermInspect))
+                CloseInspectionPopup(player);
 
             RadarSession session;
             if (!_sessions.TryGetValue(player.userID, out session) || session == null) return;
@@ -2010,6 +2092,179 @@ namespace Oxide.Plugins
         private static void DestroyRadarMoveUi(BasePlayer player)
         {
             if (player != null) CuiHelper.DestroyUi(player, RadarUiMoveName);
+        }
+
+        [ConsoleCommand("smartrecon.inspectui")]
+        private void CommandInspectionUi(ConsoleSystem.Arg arg)
+        {
+            BasePlayer player = arg == null ? null : arg.Player();
+            if (player == null) return;
+
+            string action = arg.GetString(0, string.Empty).ToLowerInvariant();
+            if (action == "close")
+            {
+                CloseInspectionPopup(player);
+                return;
+            }
+
+            InspectionPopupReport report;
+            if (!_inspectionPopupReports.TryGetValue(player.userID, out report) || report == null) return;
+            if (!IsBuiltInVanished(player) || !HasPermission(player, PermInspect))
+            {
+                CloseInspectionPopup(player);
+                return;
+            }
+
+            int pageCount = GetInspectionPopupPageCount(report);
+            if (action == "previous") report.Page = Mathf.Max(0, report.Page - 1);
+            else if (action == "next") report.Page = Mathf.Min(pageCount - 1, report.Page + 1);
+            else return;
+            DrawInspectionPopup(player, report);
+        }
+
+        private void ShowInspectionPopup(BasePlayer player, InspectionPopupReport report)
+        {
+            if (player == null || report == null) return;
+            if (_uiMoveSessions.ContainsKey(player.userID)) CancelRadarUiMove(player, true);
+            DestroyInspectionUi(player);
+            report.Page = 0;
+            _inspectionPopupReports[player.userID] = report;
+            DrawInspectionPopup(player, report);
+        }
+
+        private void DrawInspectionPopup(BasePlayer player, InspectionPopupReport report)
+        {
+            if (player == null || report == null || !player.IsConnected) return;
+            DestroyInspectionUi(player);
+
+            UserInterfaceSettings settings = _config.UserInterface;
+            string parentLayer = settings.RenderAboveInventoryBlur ? "Overlay" : "Hud";
+            int pageCount = GetInspectionPopupPageCount(report);
+            report.Page = Mathf.Clamp(report.Page, 0, pageCount - 1);
+            int rowsPerPage = _config.HammerInspection.PopupRowsPerPage;
+            int firstRow = report.Page * rowsPerPage;
+            int lastRow = Mathf.Min(report.Rows.Count, firstRow + rowsPerPage);
+            StringBuilder pageText = new StringBuilder(1024);
+            for (int i = firstRow; i < lastRow; i++)
+            {
+                if (pageText.Length > 0) pageText.Append('\n');
+                pageText.Append(report.Rows[i]);
+            }
+
+            CuiElementContainer elements = new CuiElementContainer();
+            elements.Add(new CuiPanel
+            {
+                Image = { Color = "0 0 0 0.34" },
+                RectTransform = { AnchorMin = "0 0", AnchorMax = "1 1" },
+                CursorEnabled = true
+            }, parentLayer, InspectionUiName);
+            elements.Add(new CuiPanel
+            {
+                Image = { Color = settings.PanelColor },
+                RectTransform = { AnchorMin = "0.24 0.16", AnchorMax = "0.76 0.84" }
+            }, InspectionUiName, InspectionUiPanelName);
+            elements.Add(new CuiPanel
+            {
+                Image = { Color = settings.AccentColor },
+                RectTransform = { AnchorMin = "0 0.985", AnchorMax = "1 1" }
+            }, InspectionUiPanelName);
+            elements.Add(new CuiLabel
+            {
+                Text = { Text = "SMARTRECON  •  PRIVATE AUTHORIZATION REPORT", FontSize = 9,
+                    Align = TextAnchor.MiddleLeft, Color = settings.AccentColor },
+                RectTransform = { AnchorMin = "0.045 0.915", AnchorMax = "0.83 0.975" }
+            }, InspectionUiPanelName);
+            elements.Add(new CuiLabel
+            {
+                Text = { Text = report.Title, FontSize = 17, Align = TextAnchor.MiddleLeft,
+                    Color = settings.TextColor },
+                RectTransform = { AnchorMin = "0.045 0.845", AnchorMax = "0.87 0.92" }
+            }, InspectionUiPanelName);
+            elements.Add(new CuiButton
+            {
+                Button = { Color = "0 0 0 0", Command = "smartrecon.inspectui close" },
+                RectTransform = { AnchorMin = "0.91 0.91", AnchorMax = "0.975 0.975" },
+                Text = { Text = "×", FontSize = 20, Align = TextAnchor.MiddleCenter,
+                    Color = settings.TextColor }
+            }, InspectionUiPanelName);
+            elements.Add(new CuiLabel
+            {
+                Text = { Text = report.Summary, FontSize = 12, Align = TextAnchor.UpperLeft,
+                    Color = settings.TextColor },
+                RectTransform = { AnchorMin = "0.045 0.775", AnchorMax = "0.955 0.845" }
+            }, InspectionUiPanelName);
+            elements.Add(new CuiLabel
+            {
+                Text = { Text = pageText.ToString(), FontSize = 12, Align = TextAnchor.UpperLeft,
+                    Color = settings.TextColor },
+                RectTransform = { AnchorMin = "0.045 0.145", AnchorMax = "0.955 0.765" }
+            }, InspectionUiPanelName);
+
+            if (!string.IsNullOrWhiteSpace(report.Footer))
+            {
+                elements.Add(new CuiLabel
+                {
+                    Text = { Text = report.Footer, FontSize = 10, Align = TextAnchor.MiddleLeft,
+                        Color = "0.72 0.78 0.81 1" },
+                    RectTransform = { AnchorMin = "0.045 0.065", AnchorMax = "0.61 0.125" }
+                }, InspectionUiPanelName);
+            }
+
+            if (pageCount > 1)
+            {
+                elements.Add(new CuiButton
+                {
+                    Button = { Color = report.Page > 0 ? settings.DisabledColor : "0.10 0.12 0.14 0.55",
+                        Command = report.Page > 0 ? "smartrecon.inspectui previous" : string.Empty },
+                    RectTransform = { AnchorMin = "0.66 0.055", AnchorMax = "0.74 0.125" },
+                    Text = { Text = "‹", FontSize = 18, Align = TextAnchor.MiddleCenter,
+                        Color = settings.TextColor }
+                }, InspectionUiPanelName);
+                elements.Add(new CuiLabel
+                {
+                    Text = { Text = MessageText("InspectionUiPage", player.UserIDString,
+                            report.Page + 1, pageCount), FontSize = 9, Align = TextAnchor.MiddleCenter,
+                        Color = "0.72 0.78 0.81 1" },
+                    RectTransform = { AnchorMin = "0.745 0.055", AnchorMax = "0.855 0.125" }
+                }, InspectionUiPanelName);
+                elements.Add(new CuiButton
+                {
+                    Button = { Color = report.Page + 1 < pageCount ? settings.DisabledColor : "0.10 0.12 0.14 0.55",
+                        Command = report.Page + 1 < pageCount ? "smartrecon.inspectui next" : string.Empty },
+                    RectTransform = { AnchorMin = "0.86 0.055", AnchorMax = "0.94 0.125" },
+                    Text = { Text = "›", FontSize = 18, Align = TextAnchor.MiddleCenter,
+                        Color = settings.TextColor }
+                }, InspectionUiPanelName);
+            }
+            else
+            {
+                elements.Add(new CuiLabel
+                {
+                    Text = { Text = "READ-ONLY  •  CLOSE WHEN FINISHED", FontSize = 9,
+                        Align = TextAnchor.MiddleRight, Color = "0.72 0.78 0.81 1" },
+                    RectTransform = { AnchorMin = "0.61 0.055", AnchorMax = "0.955 0.125" }
+                }, InspectionUiPanelName);
+            }
+            CuiHelper.AddUi(player, elements);
+        }
+
+        private int GetInspectionPopupPageCount(InspectionPopupReport report)
+        {
+            if (report == null || report.Rows.Count == 0) return 1;
+            return Mathf.Max(1, (report.Rows.Count + _config.HammerInspection.PopupRowsPerPage - 1) /
+                _config.HammerInspection.PopupRowsPerPage);
+        }
+
+        private void CloseInspectionPopup(BasePlayer player)
+        {
+            if (player == null) return;
+            _inspectionPopupReports.Remove(player.userID);
+            DestroyInspectionUi(player);
+        }
+
+        private static void DestroyInspectionUi(BasePlayer player)
+        {
+            if (player != null) CuiHelper.DestroyUi(player, InspectionUiName);
         }
 
         private void SetTemporaryDuration(BasePlayer player, RadarPreferences preferences, RadarSession session, string[] args)
@@ -3461,6 +3716,7 @@ namespace Oxide.Plugins
             bool managed = IsBuiltInVanished(player);
             if (!managed && !player._limitedNetworking) return false;
             if (!force && Interface.CallHook("OnVanishReappear", player) != null) return false;
+            CloseInspectionPopup(player);
 
             VanishRuntimeState state;
             _vanishRuntime.TryGetValue(player.userID, out state);
@@ -3784,7 +4040,11 @@ namespace Oxide.Plugins
             if (_config.Vanish.EnableLockBypass) Subscribe(nameof(CanUseLockedEntity));
             if (_config.Vanish.BypassAntiHack) Subscribe(nameof(OnPlayerViolation));
             if (_config.Vanish.EnableMapMarkerTeleport) Subscribe(nameof(OnMapMarkerAdd));
-            if (_config.HammerInspection.Enabled) Subscribe(nameof(OnHammerHit));
+            if (_config.HammerInspection.Enabled)
+            {
+                Subscribe(nameof(OnHammerHit));
+                Subscribe(nameof(OnPlayerDeath));
+            }
             _vanishHooksSubscribed = true;
         }
 
@@ -3796,6 +4056,7 @@ namespace Oxide.Plugins
             Unsubscribe(nameof(OnPlayerViolation));
             Unsubscribe(nameof(OnMapMarkerAdd));
             Unsubscribe(nameof(OnHammerHit));
+            Unsubscribe(nameof(OnPlayerDeath));
             _vanishHooksSubscribed = false;
         }
 
@@ -3878,6 +4139,7 @@ namespace Oxide.Plugins
             _hammerInspectionCooldowns[player.userID] = now + _config.HammerInspection.Cooldown;
 
             BaseEntity entity = info == null ? null : info.HitEntity;
+            CodeLock directlyStruckCodeLock = entity as CodeLock;
             BaseLock struckLock = entity as BaseLock;
             if (struckLock != null)
             {
@@ -3886,22 +4148,56 @@ namespace Oxide.Plugins
             }
 
             if (entity != null && !entity.IsDestroyed)
-                SendHammerInspection(player, entity);
+                SendHammerInspection(player, entity, directlyStruckCodeLock);
 
             // A qualifying vanished hammer strike is an inspection gesture, never a repair or upgrade action.
             return true;
         }
 
-        private void SendHammerInspection(BasePlayer player, BaseEntity entity)
+        private void SendHammerInspection(BasePlayer player, BaseEntity entity, CodeLock directlyStruckCodeLock)
         {
-            List<string> lines = new List<string>();
-            lines.Add(MessageText("InspectionHeader", player.UserIDString, GetInspectionEntityTitle(entity)));
-
             BuildingPrivlidge cupboard = entity as BuildingPrivlidge;
             AutoTurret turret = entity as AutoTurret;
             SleepingBag sleepingBag = entity as SleepingBag;
+            CodeLock attachedCodeLock = entity.GetSlot(BaseEntity.Slot.Lock) as CodeLock;
+            CodeLock inspectedCodeLock = directlyStruckCodeLock ?? (cupboard != null ? attachedCodeLock : null);
 
-            if (cupboard != null)
+            int sharedAuthorizationCount = 0;
+            if (directlyStruckCodeLock != null)
+            {
+                if (_config.HammerInspection.IncludeLockAuthorization)
+                    sharedAuthorizationCount = CountDistinctLockAuthorization(directlyStruckCodeLock);
+            }
+            else if (cupboard != null)
+                sharedAuthorizationCount = CountInspectionAuthorizationEntries(cupboard.authorizedPlayers, null);
+            else if (turret != null)
+                sharedAuthorizationCount = CountInspectionAuthorizationEntries(turret.authorizedPlayers, null);
+
+            if (_config.HammerInspection.UseAuthorizationPopup &&
+                sharedAuthorizationCount >= _config.HammerInspection.PopupMinimumAuthorizationEntries)
+            {
+                InspectionPopupReport popupReport = BuildInspectionPopupReport(player, entity, cupboard, turret,
+                    inspectedCodeLock, directlyStruckCodeLock != null);
+                if (popupReport != null)
+                {
+                    ShowInspectionPopup(player, popupReport);
+                    LogHammerInspection(player, entity);
+                    return;
+                }
+            }
+
+            CloseInspectionPopup(player);
+            List<string> lines = new List<string>();
+            string entityTitle = directlyStruckCodeLock == null
+                ? GetInspectionEntityTitle(entity)
+                : "CODE LOCK — " + GetInspectionEntityTitle(entity);
+            lines.Add(MessageText("InspectionHeader", player.UserIDString, entityTitle));
+
+            if (directlyStruckCodeLock != null)
+            {
+                AddInspectionOwner(lines, player, entity.OwnerID);
+            }
+            else if (cupboard != null)
             {
                 AddInspectionOwner(lines, player, cupboard.OwnerID);
                 AddInspectionAuthorization(lines, player, "InspectionAuthorized", cupboard.authorizedPlayers, null);
@@ -3926,25 +4222,287 @@ namespace Oxide.Plugins
                 AddInspectionOwner(lines, player, entity.OwnerID);
             }
 
-            if (_config.HammerInspection.IncludeLockAuthorization)
+            if (_config.HammerInspection.IncludeLockAuthorization && inspectedCodeLock != null)
             {
-                CodeLock codeLock = entity.GetSlot(BaseEntity.Slot.Lock) as CodeLock;
-                if (codeLock != null)
-                {
-                    AddInspectionAuthorization(lines, player, "InspectionLockAuthorized",
-                        codeLock.whitelistPlayers, null);
-                    AddInspectionAuthorization(lines, player, "InspectionGuestAuthorized",
-                        codeLock.guestPlayers, codeLock.whitelistPlayers);
-                }
+                AddInspectionAuthorization(lines, player, "InspectionLockAuthorized",
+                    inspectedCodeLock.whitelistPlayers, null);
+                AddInspectionAuthorization(lines, player, "InspectionGuestAuthorized",
+                    inspectedCodeLock.guestPlayers, inspectedCodeLock.whitelistPlayers);
             }
 
             SendPrivateInspection(player, lines);
+            LogHammerInspection(player, entity);
+        }
 
+        private void LogHammerInspection(BasePlayer player, BaseEntity entity)
+        {
             if (_config.HammerInspection.LogUsage)
             {
                 Puts(MessageText("InspectionAudit", null, player.displayName, player.UserIDString,
                     entity.ShortPrefabName, entity.OwnerID, entity.transform.position));
             }
+        }
+
+        private InspectionPopupReport BuildInspectionPopupReport(BasePlayer viewer, BaseEntity entity,
+            BuildingPrivlidge cupboard, AutoTurret turret, CodeLock inspectedCodeLock, bool lockWasDirectlyStruck)
+        {
+            InspectionPopupReport report = new InspectionPopupReport
+            {
+                Title = lockWasDirectlyStruck
+                    ? "CODE LOCK — " + GetInspectionEntityTitle(entity)
+                    : GetInspectionEntityTitle(entity),
+                Summary = MessageText("InspectionOwner", viewer.UserIDString,
+                    GetInspectionPlayerIdentity(viewer, entity.OwnerID))
+            };
+
+            InspectionAuthorizationStats primaryStats = null;
+            if (lockWasDirectlyStruck && inspectedCodeLock != null)
+            {
+                InspectionAuthorizationStats whitelistStats = AddInspectionPopupAuthorization(report, viewer,
+                    "InspectionUiLockAuthorization", inspectedCodeLock.whitelistPlayers, null, entity.OwnerID);
+                InspectionAuthorizationStats guestStats = AddInspectionPopupAuthorization(report, viewer,
+                    "InspectionUiGuestAuthorization", inspectedCodeLock.guestPlayers,
+                    inspectedCodeLock.whitelistPlayers, entity.OwnerID);
+                primaryStats = MergeInspectionAuthorizationStats(whitelistStats, guestStats);
+            }
+            else if (cupboard != null)
+            {
+                primaryStats = AddInspectionPopupAuthorization(report, viewer,
+                    "InspectionUiTcAuthorization", cupboard.authorizedPlayers, null, cupboard.OwnerID);
+                if (_config.HammerInspection.IncludeLockAuthorization && inspectedCodeLock != null)
+                {
+                    AddInspectionPopupAuthorization(report, viewer,
+                        "InspectionUiLockAuthorization", inspectedCodeLock.whitelistPlayers, null, entity.OwnerID);
+                    AddInspectionPopupAuthorization(report, viewer,
+                        "InspectionUiGuestAuthorization", inspectedCodeLock.guestPlayers,
+                        inspectedCodeLock.whitelistPlayers, entity.OwnerID);
+                }
+                if (_config.HammerInspection.IncludeCupboardUpkeep)
+                    report.Footer = MessageText("InspectionUpkeep", viewer.UserIDString,
+                        FormatInspectionDuration(cupboard.GetProtectedMinutes()));
+            }
+            else if (turret != null)
+            {
+                primaryStats = AddInspectionPopupAuthorization(report, viewer,
+                    "InspectionUiTurretAuthorization", turret.authorizedPlayers, null, turret.OwnerID);
+            }
+
+            AddInspectionPopupClues(report, viewer, primaryStats);
+            return report.Rows.Count == 0 ? null : report;
+        }
+
+        private InspectionAuthorizationStats AddInspectionPopupAuthorization(InspectionPopupReport report,
+            BasePlayer viewer, string sectionKey, ICollection<ulong> authorizedPlayers,
+            ICollection<ulong> excludedPlayers, ulong ownerId)
+        {
+            InspectionAuthorizationStats stats = new InspectionAuthorizationStats();
+            List<InspectionAuthorizationMember> members = new List<InspectionAuthorizationMember>();
+            Dictionary<ulong, InspectionTeamGroup> groupsById = new Dictionary<ulong, InspectionTeamGroup>();
+            List<InspectionAuthorizationMember> noTeam = new List<InspectionAuthorizationMember>();
+            RelationshipManager manager = RelationshipManager.ServerInstance;
+
+            ulong ownerTeamId = 0;
+            RelationshipManager.PlayerTeam ownerTeam;
+            if (ownerId != 0 && manager != null && manager.playerToTeam != null &&
+                manager.playerToTeam.TryGetValue(ownerId, out ownerTeam) && ownerTeam != null)
+                ownerTeamId = ownerTeam.teamID;
+
+            if (authorizedPlayers != null)
+            {
+                foreach (ulong userId in authorizedPlayers)
+                {
+                    if (excludedPlayers != null && excludedPlayers.Contains(userId)) continue;
+                    InspectionAuthorizationMember member = new InspectionAuthorizationMember
+                    {
+                        UserId = userId,
+                        Identity = GetInspectionPlayerIdentity(viewer, userId),
+                        IsOwner = userId == ownerId
+                    };
+
+                    RelationshipManager.PlayerTeam team;
+                    if (manager != null && manager.playerToTeam != null &&
+                        manager.playerToTeam.TryGetValue(userId, out team) && team != null)
+                    {
+                        member.TeamId = team.teamID;
+                        member.TeamLeaderId = team.teamLeader;
+                    }
+
+                    members.Add(member);
+                    if (member.TeamId == 0)
+                    {
+                        noTeam.Add(member);
+                        stats.NoTeamCount++;
+                    }
+                    else
+                    {
+                        InspectionTeamGroup group;
+                        if (!groupsById.TryGetValue(member.TeamId, out group))
+                        {
+                            group = new InspectionTeamGroup
+                            {
+                                TeamId = member.TeamId,
+                                TeamLeaderId = member.TeamLeaderId
+                            };
+                            groupsById[member.TeamId] = group;
+                        }
+                        group.Members.Add(member);
+                        stats.TeamIds.Add(member.TeamId);
+                    }
+
+                    if (ownerTeamId != 0 && member.TeamId != ownerTeamId)
+                        stats.OutsideOwnerTeamCount++;
+                }
+            }
+
+            stats.Count = members.Count;
+            stats.TeamCount = stats.TeamIds.Count;
+            if (members.Count == 0) return stats;
+            AddInspectionPopupHeader(report, "<color=#19C7B6><b>" +
+                MessageText(sectionKey, viewer.UserIDString) + "</b></color>");
+            report.Rows.Add(MessageText("InspectionUiAuthorizedSummary", viewer.UserIDString,
+                MessageText("InspectionUiAuthorizedLabel", viewer.UserIDString),
+                stats.Count, stats.TeamCount, stats.NoTeamCount));
+
+            if (!_config.HammerInspection.GroupPopupAuthorizationByTeam)
+            {
+                members.Sort(CompareInspectionMembers);
+                for (int i = 0; i < members.Count; i++)
+                    report.Rows.Add(FormatInspectionPopupMember(viewer, i + 1, members[i]));
+                return stats;
+            }
+
+            List<InspectionTeamGroup> groups = new List<InspectionTeamGroup>(groupsById.Values);
+            groups.Sort(delegate(InspectionTeamGroup left, InspectionTeamGroup right)
+            {
+                bool leftIsOwnerTeam = ownerTeamId != 0 && left.TeamId == ownerTeamId;
+                bool rightIsOwnerTeam = ownerTeamId != 0 && right.TeamId == ownerTeamId;
+                if (leftIsOwnerTeam != rightIsOwnerTeam) return leftIsOwnerTeam ? -1 : 1;
+                return left.TeamId.CompareTo(right.TeamId);
+            });
+
+            int number = 0;
+            for (int i = 0; i < groups.Count; i++)
+            {
+                InspectionTeamGroup group = groups[i];
+                group.Members.Sort(CompareInspectionMembers);
+                string teamHeader;
+                if (group.TeamLeaderId != 0)
+                {
+                    string leaderName = GetInspectionPlayerDisplayName(viewer, group.TeamLeaderId);
+                    teamHeader = MessageText("InspectionUiTeamHeader", viewer.UserIDString,
+                        EscapeRichText(leaderName.ToUpperInvariant()), group.Members.Count);
+                }
+                else
+                {
+                    teamHeader = MessageText("InspectionUiTeamIdHeader", viewer.UserIDString,
+                        group.TeamId, group.Members.Count);
+                }
+                AddInspectionPopupHeader(report, "<color=#F2C94C><b>" + teamHeader + "</b></color>");
+                for (int j = 0; j < group.Members.Count; j++)
+                    report.Rows.Add(FormatInspectionPopupMember(viewer, ++number, group.Members[j]));
+            }
+
+            if (noTeam.Count > 0)
+            {
+                noTeam.Sort(CompareInspectionMembers);
+                AddInspectionPopupHeader(report, "<color=#F2C94C><b>" +
+                    MessageText("InspectionUiNoTeamHeader", viewer.UserIDString, noTeam.Count) + "</b></color>");
+                for (int i = 0; i < noTeam.Count; i++)
+                    report.Rows.Add(FormatInspectionPopupMember(viewer, ++number, noTeam[i]));
+            }
+            return stats;
+        }
+
+        private static InspectionAuthorizationStats MergeInspectionAuthorizationStats(
+            InspectionAuthorizationStats first, InspectionAuthorizationStats second)
+        {
+            if (first == null) return second;
+            if (second == null) return first;
+            first.Count += second.Count;
+            first.NoTeamCount += second.NoTeamCount;
+            first.OutsideOwnerTeamCount += second.OutsideOwnerTeamCount;
+            first.TeamIds.UnionWith(second.TeamIds);
+            first.TeamCount = first.TeamIds.Count;
+            return first;
+        }
+
+        private void AddInspectionPopupHeader(InspectionPopupReport report, string header)
+        {
+            int rowsPerPage = _config.HammerInspection.PopupRowsPerPage;
+            if (report.Rows.Count > 0 && report.Rows.Count % rowsPerPage == rowsPerPage - 1)
+                report.Rows.Add(string.Empty);
+            report.Rows.Add(header);
+        }
+
+        private static int CompareInspectionMembers(InspectionAuthorizationMember left,
+            InspectionAuthorizationMember right)
+        {
+            if (left.IsOwner != right.IsOwner) return left.IsOwner ? -1 : 1;
+            bool leftIsLeader = left.TeamId != 0 && left.UserId == left.TeamLeaderId;
+            bool rightIsLeader = right.TeamId != 0 && right.UserId == right.TeamLeaderId;
+            if (leftIsLeader != rightIsLeader) return leftIsLeader ? -1 : 1;
+            return string.Compare(left.Identity, right.Identity, StringComparison.OrdinalIgnoreCase);
+        }
+
+        private string FormatInspectionPopupMember(BasePlayer viewer, int number,
+            InspectionAuthorizationMember member)
+        {
+            string suffix = string.Empty;
+            if (member.IsOwner)
+                suffix = MessageText("InspectionUiOwnerSuffix", viewer.UserIDString);
+            if (member.TeamId != 0 && member.UserId == member.TeamLeaderId)
+            {
+                string leader = MessageText("InspectionUiLeaderSuffix", viewer.UserIDString);
+                suffix = suffix.Length == 0 ? leader : leader + "/" + suffix;
+            }
+            return number.ToString(CultureInfo.InvariantCulture) + ". " + member.Identity +
+                (suffix.Length == 0 ? string.Empty : " <color=#B9CAD3>[" + suffix + "]</color>");
+        }
+
+        private void AddInspectionPopupClues(InspectionPopupReport report, BasePlayer viewer,
+            InspectionAuthorizationStats stats)
+        {
+            if (stats == null || (stats.TeamCount <= 1 && stats.OutsideOwnerTeamCount == 0 &&
+                stats.NoTeamCount == 0)) return;
+
+            AddInspectionPopupHeader(report, "<color=#F2994A><b>" +
+                MessageText("InspectionUiCluesHeader", viewer.UserIDString) + "</b></color>");
+            if (stats.TeamCount > 1)
+                report.Rows.Add("<color=#F2B27A>" + MessageText("InspectionUiMultipleTeamsClue",
+                    viewer.UserIDString, stats.TeamCount) + "</color>");
+            if (stats.OutsideOwnerTeamCount > 0)
+                report.Rows.Add("<color=#F2B27A>" + MessageText("InspectionUiOutsideOwnerTeamClue",
+                    viewer.UserIDString, stats.OutsideOwnerTeamCount) + "</color>");
+            if (stats.NoTeamCount > 0)
+                report.Rows.Add("<color=#F2B27A>" + MessageText("InspectionUiNoTeamClue",
+                    viewer.UserIDString, stats.NoTeamCount) + "</color>");
+        }
+
+        private static int CountInspectionAuthorizationEntries(ICollection<ulong> authorizedPlayers,
+            ICollection<ulong> excludedPlayers)
+        {
+            if (authorizedPlayers == null) return 0;
+            int count = 0;
+            foreach (ulong userId in authorizedPlayers)
+            {
+                if (excludedPlayers == null || !excludedPlayers.Contains(userId)) count++;
+            }
+            return count;
+        }
+
+        private static int CountDistinctLockAuthorization(CodeLock codeLock)
+        {
+            if (codeLock == null) return 0;
+            HashSet<ulong> users = new HashSet<ulong>();
+            if (codeLock.whitelistPlayers != null)
+            {
+                foreach (ulong userId in codeLock.whitelistPlayers) users.Add(userId);
+            }
+            if (codeLock.guestPlayers != null)
+            {
+                foreach (ulong userId in codeLock.guestPlayers) users.Add(userId);
+            }
+            return users.Count;
         }
 
         private void AddInspectionOwner(List<string> lines, BasePlayer viewer, ulong ownerId)
@@ -3983,6 +4541,13 @@ namespace Oxide.Plugins
         {
             if (userId == 0) return MessageText("InspectionServerOwned", viewer.UserIDString);
 
+            return EscapeRichText(GetInspectionPlayerDisplayName(viewer, userId)) + " (" +
+                userId.ToString(CultureInfo.InvariantCulture) + ")";
+        }
+
+        private string GetInspectionPlayerDisplayName(BasePlayer viewer, ulong userId)
+        {
+            if (userId == 0) return MessageText("InspectionServerOwned", viewer.UserIDString);
             BasePlayer target = BasePlayer.FindByID(userId) ?? BasePlayer.FindSleeping(userId);
             string playerName = target == null ? null : target.displayName;
             if (string.IsNullOrWhiteSpace(playerName))
@@ -3992,8 +4557,7 @@ namespace Oxide.Plugins
             }
             if (string.IsNullOrWhiteSpace(playerName))
                 playerName = MessageText("InspectionUnknownPlayer", viewer.UserIDString);
-
-            return EscapeRichText(playerName) + " (" + userId.ToString(CultureInfo.InvariantCulture) + ")";
+            return playerName;
         }
 
         private static string GetInspectionEntityTitle(BaseEntity entity)
@@ -4584,7 +5148,8 @@ namespace Oxide.Plugins
         private static string EscapeRichText(string value)
         {
             if (string.IsNullOrEmpty(value)) return "Unknown";
-            return value.Replace("<", "&lt;").Replace(">", "&gt;");
+            return value.Replace("\r", " ").Replace("\n", " ")
+                .Replace("<", "&lt;").Replace(">", "&gt;");
         }
 
         private string GetTeamColorHex(ulong teamId)
